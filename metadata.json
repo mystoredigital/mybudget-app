@@ -1,0 +1,5 @@
+{
+  "name": "Inversion Budget App",
+  "description": "Personal finance and budget tracker with Supabase integration, recurring payments, and calendar.",
+  "requestFramePermissions": []
+}

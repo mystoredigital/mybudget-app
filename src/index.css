@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f7f9f7;
+  color: #1a1a1a;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.dark body,
+body:where(.dark *) {
+  background-color: #09090b;
+  color: #fafafa;
+}
+
+/* ===== Native App (Capacitor) Enhancements ===== */
+
+/* Safe area padding for devices with notch / dynamic island */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+
+/* Smooth scrolling for native feel */
+html {
+  -webkit-overflow-scrolling: touch;
+  overflow-scrolling: touch;
+}
+
+/* Prevent rubber-banding / overscroll on native */
+body {
+  overscroll-behavior-y: contain;
+}
+
+/* Prevent text selection on buttons/nav for app-like feel */
+button, a, nav, [role="button"] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Ensure inputs are still selectable */
+input, textarea, select, [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
