@@ -50,7 +50,7 @@ export default function Settings() {
 
             if (data) {
                 // Build CSV string
-                const headers = ['id', 'expense', 'categoria', 'tipo_presupuesto', 'fecha', 'cuenta', 'vence_en', 'valor', 'moneda', 'status', 'comment'];
+                const headers = ['id', 'expense', 'categoria', 'portafolio', 'fecha', 'cuenta', 'vence_en', 'valor', 'moneda', 'status', 'comment'];
                 const rows = data.map(item => headers.map(h => JSON.stringify(item[h] || '')).join(','));
                 const csvContent = [headers.join(','), ...rows].join('\n');
 

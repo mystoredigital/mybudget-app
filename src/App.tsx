@@ -12,6 +12,8 @@ import ExpensesByMonth from './pages/ExpensesByMonth';
 import CalendarView from './pages/CalendarView';
 import FoodExpenses from './pages/FoodExpenses';
 import Settings from './pages/Settings';
+import PortfoliosList from './pages/PortfoliosList';
+import PortfolioDetail from './pages/PortfolioDetail';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
@@ -47,6 +49,8 @@ export default function App() {
               <Route path="expenses/mes" element={<ExpensesByMonth />} />
               <Route path="expenses/food" element={<FoodExpenses />} />
               <Route path="expenses/calendar" element={<CalendarView />} />
+              <Route path="portfolios" element={<PortfoliosList />} />
+              <Route path="portfolios/:id" element={<PortfolioDetail />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>

@@ -85,12 +85,12 @@ export default function ExpensesByStatus() {
     setIsModalOpen(true);
   };
 
-  // Group by tipo_presupuesto
+  // Group by portafolio
   const grouped: Record<string, Expense[]> = {};
   expenses.forEach(e => {
-    const tipo = e.tipo_presupuesto || 'Personal';
-    if (!grouped[tipo]) grouped[tipo] = [];
-    grouped[tipo].push(e);
+    const portafolio = e.portafolio || 'Personal';
+    if (!grouped[portafolio]) grouped[portafolio] = [];
+    grouped[portafolio].push(e);
   });
 
   const orderedTypes = ['Personal', 'Suscripciones', 'Negocios'];

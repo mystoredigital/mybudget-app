@@ -252,7 +252,7 @@ export default function ExpensesTable() {
                         <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-3 py-1.5 rounded-xl text-xs font-semibold tracking-wide border border-zinc-200/50 dark:border-zinc-700">
                           {expense.categoria}
                         </span>
-                        <p className="text-xs text-zinc-400 font-medium mt-1 uppercase">{expense.tipo_presupuesto}</p>
+                        <p className="text-xs text-zinc-400 font-medium mt-1 uppercase">{expense.portafolio}</p>
                       </td>
                       <td className="px-6 py-5">
                         <p className="text-zinc-600 dark:text-zinc-400 font-medium">{expense.fecha || 'Sin fecha'}</p>

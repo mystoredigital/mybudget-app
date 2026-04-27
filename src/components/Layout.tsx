@@ -28,6 +28,7 @@ export default function Layout() {
   const navItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/expenses', icon: List, label: 'Todos' },
+    { to: '/portfolios', icon: Briefcase, label: 'Portafolios' },
     { to: '/expenses/estado', icon: CreditCard, label: 'Presupuestos' },
     { to: '/expenses/categoria', icon: PieChart, label: 'Categorías' },
     { to: '/expenses/calendar', icon: CalendarIcon, label: 'Calendario' },

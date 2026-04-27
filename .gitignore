@@ -7,3 +7,7 @@ coverage/
 .env*
 !.env.example
 !.env.production
+
+# Reference material (Notion exports, etc.)
+Documentos/
+documentos/

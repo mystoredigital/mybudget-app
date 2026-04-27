@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, Expense, UserCategory, UserBudgetType } from '../lib/supabase';
+import { supabase, Expense, UserCategory, UserPortfolio } from '../lib/supabase';
 import { X, Trash2, Plus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
@@ -16,13 +16,14 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
     const { settings } = useSettings();
     const [loading, setLoading] = useState(false);
 
-    // Dynamic categories and budget types from DB
+    // Dynamic categories and portfolios from DB.
+    // Only 'simple' portfolios show up here — 'shared' ones are managed in the Portafolio section.
     const [categories, setCategories] = useState<UserCategory[]>([]);
-    const [budgetTypes, setBudgetTypes] = useState<UserBudgetType[]>([]);
+    const [portfolios, setPortfolios] = useState<UserPortfolio[]>([]);
     const [showNewCategory, setShowNewCategory] = useState(false);
-    const [showNewType, setShowNewType] = useState(false);
+    const [showNewPortfolio, setShowNewPortfolio] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState('');
-    const [newTypeName, setNewTypeName] = useState('');
+    const [newPortfolioName, setNewPortfolioName] = useState('');
 
     const defaultForm = {
         expense: '',
@@ -31,7 +32,7 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
         fecha: '',
         valor: '',
         moneda: 'COP' as 'COP' | 'USD',
-        tipo_presupuesto: 'Personal',
+        portafolio: 'Personal',
         frecuencia: 'Unico',
         cuenta: '',
         nombre: '',
@@ -40,11 +41,10 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
 
     const [formData, setFormData] = useState(defaultForm);
 
-    // Fetch categories and budget types from DB
     useEffect(() => {
         if (user) {
             fetchCategories();
-            fetchBudgetTypes();
+            fetchPortfolios();
         }
     }, [user]);
 
@@ -58,14 +58,15 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
         if (!error && data) setCategories(data);
     }
 
-    async function fetchBudgetTypes() {
+    async function fetchPortfolios() {
         if (!user) return;
         const { data, error } = await supabase
-            .from('user_budget_types')
+            .from('user_portfolios')
             .select('*')
             .eq('user_id', user.id)
+            .eq('type', 'simple')
             .order('name');
-        if (!error && data) setBudgetTypes(data);
+        if (!error && data) setPortfolios(data);
     }
 
     useEffect(() => {
@@ -78,7 +79,7 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
                     fecha: expenseToEdit.fecha || '',
                     valor: String(expenseToEdit.valor),
                     moneda: expenseToEdit.moneda || 'COP',
-                    tipo_presupuesto: expenseToEdit.tipo_presupuesto || 'Personal',
+                    portafolio: expenseToEdit.portafolio || 'Personal',
                     frecuencia: expenseToEdit.frecuencia || 'Unico',
                     cuenta: expenseToEdit.cuenta || '',
                     nombre: expenseToEdit.nombre || '',
@@ -88,9 +89,9 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
                 setFormData(defaultForm);
             }
             setShowNewCategory(false);
-            setShowNewType(false);
+            setShowNewPortfolio(false);
             setNewCategoryName('');
-            setNewTypeName('');
+            setNewPortfolioName('');
         }
     }, [isOpen, expenseToEdit]);
 
@@ -103,7 +104,6 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
     const handleAddCategory = async () => {
         const trimmed = newCategoryName.trim();
         if (!trimmed || !user) return;
-        // Check if already exists
         if (categories.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
             setFormData({ ...formData, categoria: trimmed });
             setShowNewCategory(false);
@@ -127,60 +127,29 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
         }
     };
 
-    const handleAddBudgetType = async () => {
-        const trimmed = newTypeName.trim();
+    const handleAddPortfolio = async () => {
+        const trimmed = newPortfolioName.trim();
         if (!trimmed || !user) return;
-        // Check if already exists
-        if (budgetTypes.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) {
-            setFormData({ ...formData, tipo_presupuesto: trimmed });
-            setShowNewType(false);
-            setNewTypeName('');
+        if (portfolios.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
+            setFormData({ ...formData, portafolio: trimmed });
+            setShowNewPortfolio(false);
+            setNewPortfolioName('');
             return;
         }
 
         const { data, error } = await supabase
-            .from('user_budget_types')
-            .insert([{ user_id: user.id, name: trimmed }])
+            .from('user_portfolios')
+            .insert([{ user_id: user.id, name: trimmed, type: 'simple' }])
             .select()
             .single();
 
         if (!error && data) {
-            setBudgetTypes(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
-            setFormData({ ...formData, tipo_presupuesto: data.name });
-            setShowNewType(false);
-            setNewTypeName('');
+            setPortfolios(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+            setFormData({ ...formData, portafolio: data.name });
+            setShowNewPortfolio(false);
+            setNewPortfolioName('');
         } else {
-            alert('Error al crear tipo: ' + (error?.message || 'Error desconocido'));
-        }
-    };
-
-    const handleDeleteCategory = async (cat: UserCategory) => {
-        if (!window.confirm(`¿Eliminar la categoría "${cat.name}"?`)) return;
-        const { error } = await supabase
-            .from('user_categories')
-            .delete()
-            .eq('id', cat.id);
-        if (!error) {
-            setCategories(prev => prev.filter(c => c.id !== cat.id));
-            if (formData.categoria === cat.name && categories.length > 1) {
-                const remaining = categories.filter(c => c.id !== cat.id);
-                setFormData({ ...formData, categoria: remaining[0]?.name || '' });
-            }
-        }
-    };
-
-    const handleDeleteBudgetType = async (bt: UserBudgetType) => {
-        if (!window.confirm(`¿Eliminar el tipo "${bt.name}"?`)) return;
-        const { error } = await supabase
-            .from('user_budget_types')
-            .delete()
-            .eq('id', bt.id);
-        if (!error) {
-            setBudgetTypes(prev => prev.filter(t => t.id !== bt.id));
-            if (formData.tipo_presupuesto === bt.name && budgetTypes.length > 1) {
-                const remaining = budgetTypes.filter(t => t.id !== bt.id);
-                setFormData({ ...formData, tipo_presupuesto: remaining[0]?.name || '' });
-            }
+            alert('Error al crear portafolio: ' + (error?.message || 'Error desconocido'));
         }
     };
 
@@ -220,7 +189,7 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
                 fecha: formData.fecha || null,
                 valor: parseFloat(formData.valor) || 0,
                 moneda: formData.moneda,
-                tipo_presupuesto: formData.tipo_presupuesto,
+                portafolio: formData.portafolio,
                 frecuencia: formData.frecuencia,
                 cuenta: formData.cuenta,
                 nombre: formData.nombre,
@@ -230,7 +199,6 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
             let dataResult;
 
             if (expenseToEdit) {
-                // Actualizar
                 const { data, error } = await supabase
                     .from('expenses')
                     .update(payload)
@@ -240,7 +208,6 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
                 if (error) throw error;
                 dataResult = data;
             } else {
-                // Crear
                 const { data, error } = await supabase
                     .from('expenses')
                     .insert([payload])
@@ -332,30 +299,30 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
 
                         {/* Clasification - Dynamic */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* Tipo (Budget Type) - Dynamic */}
+                            {/* Portafolio (antes "Tipo") - Dynamic, only 'simple' */}
                             <div>
-                                <label className="block text-sm font-semibold text-zinc-700 mb-2">Tipo</label>
-                                {!showNewType ? (
+                                <label className="block text-sm font-semibold text-zinc-700 mb-2">Portafolio</label>
+                                {!showNewPortfolio ? (
                                     <div className="flex gap-1">
                                         <select
-                                            name="tipo_presupuesto"
-                                            value={formData.tipo_presupuesto}
+                                            name="portafolio"
+                                            value={formData.portafolio}
                                             onChange={handleChange}
                                             className="flex-1 px-5 py-3 bg-zinc-50 border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none cursor-pointer"
                                         >
-                                            {budgetTypes.map(t => (
-                                                <option key={t.id} value={t.name}>{t.name}</option>
+                                            {portfolios.map(p => (
+                                                <option key={p.id} value={p.name}>{p.name}</option>
                                             ))}
-                                            {/* If current form value doesn't exist in DB, show it as option */}
-                                            {formData.tipo_presupuesto && !budgetTypes.some(t => t.name === formData.tipo_presupuesto) && (
-                                                <option value={formData.tipo_presupuesto}>{formData.tipo_presupuesto}</option>
+                                            {/* Si el valor actual no está en la lista (ej: portafolio shared), mostrarlo igual */}
+                                            {formData.portafolio && !portfolios.some(p => p.name === formData.portafolio) && (
+                                                <option value={formData.portafolio}>{formData.portafolio}</option>
                                             )}
                                         </select>
                                         <button
                                             type="button"
-                                            onClick={() => setShowNewType(true)}
+                                            onClick={() => setShowNewPortfolio(true)}
                                             className="w-10 h-10 shrink-0 rounded-xl bg-teal-50 border border-teal-200 text-teal-600 hover:bg-teal-100 transition-colors flex items-center justify-center self-center"
-                                            title="Agregar nuevo tipo"
+                                            title="Agregar nuevo portafolio"
                                         >
                                             <Plus className="w-4 h-4" />
                                         </button>
@@ -364,15 +331,15 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
                                     <div className="flex gap-1">
                                         <input
                                             type="text"
-                                            value={newTypeName}
-                                            onChange={(e) => setNewTypeName(e.target.value)}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddBudgetType(); } }}
-                                            placeholder="Nombre del tipo"
+                                            value={newPortfolioName}
+                                            onChange={(e) => setNewPortfolioName(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddPortfolio(); } }}
+                                            placeholder="Nombre del portafolio"
                                             className="flex-1 px-4 py-3 bg-zinc-50 border border-teal-300 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none text-sm"
                                             autoFocus
                                         />
-                                        <button type="button" onClick={handleAddBudgetType} className="px-3 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold hover:bg-teal-500 transition-colors">OK</button>
-                                        <button type="button" onClick={() => { setShowNewType(false); setNewTypeName(''); }} className="px-2 py-2 rounded-xl text-zinc-500 hover:bg-zinc-100 transition-colors">
+                                        <button type="button" onClick={handleAddPortfolio} className="px-3 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold hover:bg-teal-500 transition-colors">OK</button>
+                                        <button type="button" onClick={() => { setShowNewPortfolio(false); setNewPortfolioName(''); }} className="px-2 py-2 rounded-xl text-zinc-500 hover:bg-zinc-100 transition-colors">
                                             <X className="w-4 h-4" />
                                         </button>
                                     </div>
@@ -393,7 +360,6 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
                                             {categories.map(c => (
                                                 <option key={c.id} value={c.name}>{c.name}</option>
                                             ))}
-                                            {/* If current form value doesn't exist in DB, show it as option */}
                                             {formData.categoria && !categories.some(c => c.name === formData.categoria) && (
                                                 <option value={formData.categoria}>{formData.categoria}</option>
                                             )}
