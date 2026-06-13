@@ -201,7 +201,8 @@ export type Movimiento = {
   cuenta_id: string | null;        // origen (gasto/traslado) o destino (ingreso)
   cuenta_destino_id: string | null; // solo traslado
   tasa_usada: number | null;        // USD/COP usada si hubo cambio
-  monto_destino: number | null;     // monto que llega al destino si difiere la moneda
+  monto_destino: number | null;     // monto que llega al destino (ya descontada la comisión)
+  comision: number;                 // fee del traslado, en la moneda del origen
   categoria: string | null;
   status: 'Pendiente' | 'Pagado';
   expense_id: string | null;

@@ -31,6 +31,7 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
     const [monto, setMonto] = useState('');
     const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
     const [tasa, setTasa] = useState('');
+    const [comision, setComision] = useState('');
 
     const activas = useMemo(() => cuentas.filter(c => !c.archivada), [cuentas]);
 
@@ -44,6 +45,7 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
             setMonto('');
             setFecha(new Date().toISOString().split('T')[0]);
             setTasa(defaultRate ? String(defaultRate) : '');
+            setComision('');
         }
     }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -53,23 +55,26 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
     // ¿El traslado cruza monedas?
     const cruzaMoneda = tipo === 'traslado' && cuentaOrigen && cuentaDestino && cuentaOrigen.moneda !== cuentaDestino.moneda;
 
-    // Monto que llega al destino, según dirección del cambio.
+    // Monto que llega al destino: se descuenta la comisión (en moneda origen)
+    // y luego se convierte si las monedas difieren.
     const montoDestino = useMemo(() => {
-        if (!cruzaMoneda || !cuentaOrigen || !cuentaDestino) return null;
-        const m = Number(monto) || 0;
+        if (tipo !== 'traslado' || !cuentaOrigen || !cuentaDestino) return null;
+        const neto = Math.max(0, (Number(monto) || 0) - (Number(comision) || 0));
+        if (!cruzaMoneda) return neto;
         const t = Number(tasa) || 0;
         if (!t) return null;
         // tasa = COP por 1 USD
-        if (cuentaOrigen.moneda === 'USD' && cuentaDestino.moneda === 'COP') return m * t;
-        if (cuentaOrigen.moneda === 'COP' && cuentaDestino.moneda === 'USD') return m / t;
-        return m;
-    }, [cruzaMoneda, cuentaOrigen, cuentaDestino, monto, tasa]);
+        if (cuentaOrigen.moneda === 'USD' && cuentaDestino.moneda === 'COP') return neto * t;
+        if (cuentaOrigen.moneda === 'COP' && cuentaDestino.moneda === 'USD') return neto / t;
+        return neto;
+    }, [tipo, cruzaMoneda, cuentaOrigen, cuentaDestino, monto, tasa, comision]);
 
     if (!isOpen) return null;
 
+    const TIPO_LABEL: Record<MovimientoTipo, string> = { ingreso: 'Ingreso', gasto: 'Gasto', traslado: 'Traslado' };
+
     const handleSubmit = async () => {
         if (!user) return;
-        if (!concepto.trim()) { alert('Escribe un concepto'); return; }
         if (!cuentaId) { alert('Elige una cuenta'); return; }
         if (!(Number(monto) > 0)) { alert('El monto debe ser mayor a 0'); return; }
         if (tipo === 'traslado') {
@@ -80,19 +85,23 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
 
         setLoading(true);
         try {
+            // Concepto opcional: si va vacío, una etiqueta sensata.
+            const conceptoFinal = concepto.trim() ||
+                (tipo === 'gasto' && categoria ? categoria : TIPO_LABEL[tipo]);
             // moneda del movimiento = moneda de la cuenta de origen (o destino en ingreso)
-            const monedaMov = tipo === 'ingreso' ? cuentaOrigen!.moneda : cuentaOrigen!.moneda;
+            const monedaMov = cuentaOrigen!.moneda;
             const payload = {
                 user_id: user.id,
                 tipo,
-                concepto: concepto.trim(),
+                concepto: conceptoFinal,
                 fecha,
                 monto: Number(monto),
                 moneda: monedaMov,
                 cuenta_id: cuentaId,
                 cuenta_destino_id: tipo === 'traslado' ? cuentaDestinoId : null,
                 tasa_usada: tipo === 'traslado' && cruzaMoneda ? Number(tasa) : null,
-                monto_destino: tipo === 'traslado' ? (cruzaMoneda ? montoDestino : Number(monto)) : null,
+                monto_destino: tipo === 'traslado' ? montoDestino : null,
+                comision: tipo === 'traslado' ? (Number(comision) || 0) : 0,
                 categoria: tipo === 'gasto' ? (categoria || null) : null,
                 status: 'Pagado',
             };
@@ -164,7 +173,7 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
                     )}
 
                     <div>
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">Concepto</label>
+                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">Concepto <span className="text-zinc-400 font-normal">(opcional)</span></label>
                         <input
                             value={concepto}
                             onChange={(e) => setConcepto(e.target.value)}
@@ -210,25 +219,38 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
                         </div>
                     </div>
 
-                    {/* Cambio de moneda en traslado */}
-                    {cruzaMoneda && (
+                    {/* Comisión + cambio en traslados */}
+                    {tipo === 'traslado' && (
                         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 space-y-3">
-                            <div className="flex items-center gap-2 text-blue-800 dark:text-blue-300 text-sm font-bold">
-                                <ArrowLeftRight className="w-4 h-4" /> Cambio {cuentaOrigen!.moneda} → {cuentaDestino!.moneda}
-                            </div>
                             <div>
-                                <label className="block text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">Tasa usada (COP por 1 USD — lo que te pagan)</label>
+                                <label className="block text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">
+                                    Comisión / fee {cuentaOrigen ? `(${cuentaOrigen.moneda})` : ''} <span className="font-normal text-blue-500">— si pasas 1000 y llegan menos</span>
+                                </label>
                                 <input
                                     type="number"
-                                    value={tasa}
-                                    onChange={(e) => setTasa(e.target.value)}
-                                    placeholder={defaultRate ? `Sugerida: ${defaultRate}` : 'Ingresa la tasa'}
+                                    value={comision}
+                                    onChange={(e) => setComision(e.target.value)}
+                                    placeholder="0"
                                     className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-blue-200 dark:border-blue-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-zinc-800 dark:text-white font-medium"
                                 />
                             </div>
-                            {montoDestino != null && (
+                            {cruzaMoneda && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">
+                                        Tasa usada ({cuentaOrigen!.moneda} → {cuentaDestino!.moneda}, COP por 1 USD — lo que te pagan)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={tasa}
+                                        onChange={(e) => setTasa(e.target.value)}
+                                        placeholder={defaultRate ? `Sugerida: ${defaultRate}` : 'Ingresa la tasa'}
+                                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-blue-200 dark:border-blue-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-zinc-800 dark:text-white font-medium"
+                                    />
+                                </div>
+                            )}
+                            {montoDestino != null && cuentaDestino && (
                                 <p className="text-sm text-blue-800 dark:text-blue-300 font-semibold">
-                                    Llega a destino: {formatCurrency(montoDestino, cuentaDestino!.moneda)}
+                                    Llega a {cuentaDestino.nombre}: {formatCurrency(montoDestino, cuentaDestino.moneda)}
                                 </p>
                             )}
                         </div>
