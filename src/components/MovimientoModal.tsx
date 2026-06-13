@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase, CuentaSaldo, MovimientoTipo } from '../lib/supabase';
+import { supabase, CuentaSaldo, MovimientoTipo, Movimiento } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../lib/utils';
-import { X, ArrowDownLeft, ArrowUpRight, ArrowLeftRight } from 'lucide-react';
+import { X, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Trash2 } from 'lucide-react';
 
 type Props = {
     isOpen: boolean;
@@ -12,6 +12,7 @@ type Props = {
     categorias: string[];
     defaultRate: number | null; // tasa USD_COP del día (COP por 1 USD)
     initialTipo?: MovimientoTipo;
+    movToEdit?: Movimiento | null;
 };
 
 const TIPOS: { value: MovimientoTipo; label: string; icon: React.ElementType; active: string; btn: string }[] = [
@@ -20,7 +21,7 @@ const TIPOS: { value: MovimientoTipo; label: string; icon: React.ElementType; ac
     { value: 'traslado', label: 'Traslado', icon: ArrowLeftRight, active: 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300', btn: 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20' },
 ];
 
-export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, categorias, defaultRate, initialTipo }: Props) {
+export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, categorias, defaultRate, initialTipo, movToEdit }: Props) {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [tipo, setTipo] = useState<MovimientoTipo>('gasto');
@@ -36,7 +37,18 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
     const activas = useMemo(() => cuentas.filter(c => !c.archivada), [cuentas]);
 
     useEffect(() => {
-        if (isOpen) {
+        if (!isOpen) return;
+        if (movToEdit) {
+            setTipo(movToEdit.tipo);
+            setCuentaId(movToEdit.cuenta_id || '');
+            setCuentaDestinoId(movToEdit.cuenta_destino_id || '');
+            setConcepto(movToEdit.concepto || '');
+            setCategoria(movToEdit.categoria || '');
+            setMonto(String(movToEdit.monto));
+            setFecha(movToEdit.fecha);
+            setTasa(movToEdit.tasa_usada ? String(movToEdit.tasa_usada) : (defaultRate ? String(defaultRate) : ''));
+            setComision(movToEdit.comision ? String(movToEdit.comision) : '');
+        } else {
             setTipo(initialTipo || 'gasto');
             setCuentaId(activas[0]?.id || '');
             setCuentaDestinoId('');
@@ -47,7 +59,7 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
             setTasa(defaultRate ? String(defaultRate) : '');
             setComision('');
         }
-    }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isOpen, movToEdit]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const cuentaOrigen = activas.find(c => c.id === cuentaId);
     const cuentaDestino = activas.find(c => c.id === cuentaDestinoId);
@@ -105,12 +117,30 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
                 categoria: tipo === 'gasto' ? (categoria || null) : null,
                 status: 'Pagado',
             };
-            const { error } = await supabase.from('movimientos').insert([payload]);
+            const { error } = movToEdit
+                ? await supabase.from('movimientos').update(payload).eq('id', movToEdit.id)
+                : await supabase.from('movimientos').insert([payload]);
             if (error) throw error;
             onSuccess();
             onClose();
         } catch (err: any) {
             alert('Error registrando el movimiento: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!movToEdit) return;
+        if (!window.confirm('¿Borrar este movimiento? El saldo se recalcula.')) return;
+        setLoading(true);
+        try {
+            const { error } = await supabase.from('movimientos').delete().eq('id', movToEdit.id);
+            if (error) throw error;
+            onSuccess();
+            onClose();
+        } catch (err: any) {
+            alert('Error borrando el movimiento: ' + err.message);
         } finally {
             setLoading(false);
         }
@@ -122,7 +152,7 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
             <div className="bg-white dark:bg-zinc-900 rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-between px-8 py-6 border-b border-zinc-100 dark:border-zinc-800">
-                    <h2 className="text-xl font-bold text-zinc-900 dark:text-white">Nuevo Movimiento</h2>
+                    <h2 className="text-xl font-bold text-zinc-900 dark:text-white">{movToEdit ? 'Editar Movimiento' : 'Nuevo Movimiento'}</h2>
                     <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-300 transition-colors">
                         <X className="w-5 h-5" />
                     </button>
@@ -257,10 +287,16 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
                     )}
                 </div>
 
-                <div className="bg-zinc-50 dark:bg-zinc-800/50 border-t border-zinc-100 dark:border-zinc-800 p-6 px-8 flex justify-end gap-3">
+                <div className="bg-zinc-50 dark:bg-zinc-800/50 border-t border-zinc-100 dark:border-zinc-800 p-6 px-8 flex items-center gap-3">
+                    {movToEdit && (
+                        <button onClick={handleDelete} disabled={loading} className="p-2.5 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors disabled:opacity-50" title="Borrar movimiento">
+                            <Trash2 className="w-5 h-5" />
+                        </button>
+                    )}
+                    <div className="flex-1" />
                     <button onClick={onClose} className="px-5 py-2.5 rounded-xl font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">Cancelar</button>
                     <button onClick={handleSubmit} disabled={loading || activas.length === 0} className={`px-6 py-2.5 rounded-xl font-bold text-white shadow-md disabled:opacity-50 transition-colors ${activeBtn}`}>
-                        {loading ? 'Guardando...' : 'Registrar'}
+                        {loading ? 'Guardando...' : (movToEdit ? 'Guardar' : 'Registrar')}
                     </button>
                 </div>
             </div>

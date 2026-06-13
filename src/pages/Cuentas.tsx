@@ -28,6 +28,7 @@ export default function Cuentas() {
     const [cuentaModalOpen, setCuentaModalOpen] = useState(false);
     const [cuentaToEdit, setCuentaToEdit] = useState<Cuenta | null>(null);
     const [movModalOpen, setMovModalOpen] = useState(false);
+    const [movToEdit, setMovToEdit] = useState<Movimiento | null>(null);
 
     useEffect(() => {
         async function fetchData() {
@@ -86,7 +87,7 @@ export default function Cuentas() {
                     <button onClick={() => { setCuentaToEdit(null); setCuentaModalOpen(true); }} className="flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 px-4 py-3 rounded-full font-bold shadow-sm hover:bg-zinc-50 transition-all text-sm">
                         <Plus className="w-4 h-4" /> Cuenta
                     </button>
-                    <button onClick={() => setMovModalOpen(true)} className="flex items-center gap-2 bg-teal-900 dark:bg-teal-700 text-white px-5 py-3 rounded-full font-bold shadow-md shadow-teal-900/20 hover:bg-teal-800 hover:-translate-y-0.5 transition-all text-sm">
+                    <button onClick={() => { setMovToEdit(null); setMovModalOpen(true); }} className="flex items-center gap-2 bg-teal-900 dark:bg-teal-700 text-white px-5 py-3 rounded-full font-bold shadow-md shadow-teal-900/20 hover:bg-teal-800 hover:-translate-y-0.5 transition-all text-sm">
                         <Plus className="w-5 h-5" /> Movimiento
                     </button>
                 </div>
@@ -181,7 +182,7 @@ export default function Cuentas() {
                                     const origen = m.cuenta_id ? cuentaNombre[m.cuenta_id]?.nombre : null;
                                     const destino = m.cuenta_destino_id ? cuentaNombre[m.cuenta_destino_id]?.nombre : null;
                                     return (
-                                        <div key={m.id} className="flex items-center gap-4 px-5 py-3">
+                                        <div key={m.id} onClick={() => { setMovToEdit(m); setMovModalOpen(true); }} className="flex items-center gap-4 px-5 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer">
                                             <div className={`w-9 h-9 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center shrink-0 ${meta.color}`}>
                                                 <meta.icon className="w-4 h-4" />
                                             </div>
@@ -207,7 +208,7 @@ export default function Cuentas() {
             )}
 
             <CuentaModal isOpen={cuentaModalOpen} onClose={() => setCuentaModalOpen(false)} onSuccess={refresh} cuentaToEdit={cuentaToEdit} />
-            <MovimientoModal isOpen={movModalOpen} onClose={() => setMovModalOpen(false)} onSuccess={refresh} cuentas={cuentas} categorias={categorias} defaultRate={rate} />
+            <MovimientoModal isOpen={movModalOpen} onClose={() => { setMovModalOpen(false); setMovToEdit(null); }} onSuccess={refresh} cuentas={cuentas} categorias={categorias} defaultRate={rate} movToEdit={movToEdit} />
         </div>
     );
 }
