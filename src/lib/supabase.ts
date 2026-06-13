@@ -43,6 +43,7 @@ export type Expense = {
   comment: string | null;
   portafolio: string;
   frecuencia: Frecuencia;
+  cuenta_id: string | null; // v2: cuenta de la que salió el pago
   created_at: string;
   updated_at: string;
   vence_en?: string; // From view
@@ -164,5 +165,57 @@ export type PortfolioMovementFile = {
   filename: string | null;
   mime_type: string | null;
   size: number | null;
+  created_at: string;
+};
+
+// ── v2: Tesorería (cuentas + movimientos + tasas) ──
+
+export type CuentaTipo = 'banco' | 'wallet' | 'tarjeta' | 'efectivo';
+
+export type Cuenta = {
+  id: string;
+  user_id: string;
+  nombre: string;
+  tipo: CuentaTipo;
+  moneda: Currency;
+  saldo_inicial: number;
+  archivada: boolean;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// Fila de la vista cuentas_saldos (cuenta + saldo calculado en vivo)
+export type CuentaSaldo = Cuenta & { saldo_actual: number };
+
+export type MovimientoTipo = 'ingreso' | 'gasto' | 'traslado';
+
+export type Movimiento = {
+  id: string;
+  user_id: string;
+  tipo: MovimientoTipo;
+  concepto: string;
+  fecha: string;
+  monto: number;
+  moneda: Currency;
+  cuenta_id: string | null;        // origen (gasto/traslado) o destino (ingreso)
+  cuenta_destino_id: string | null; // solo traslado
+  tasa_usada: number | null;        // USD/COP usada si hubo cambio
+  monto_destino: number | null;     // monto que llega al destino si difiere la moneda
+  categoria: string | null;
+  status: 'Pendiente' | 'Pagado';
+  expense_id: string | null;
+  comment: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TasaCambio = {
+  id: string;
+  user_id: string;
+  fecha: string;
+  par: string; // 'USD_COP'
+  valor: number;
+  fuente: 'api' | 'manual';
   created_at: string;
 };

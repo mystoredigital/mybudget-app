@@ -11,7 +11,8 @@ import {
   CreditCard,
   Briefcase,
   Coffee,
-  CircleDashed
+  CircleDashed,
+  Wallet
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -27,6 +28,7 @@ export default function Layout() {
 
   const navItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/cuentas', icon: Wallet, label: 'Cuentas' },
     { to: '/expenses', icon: List, label: 'Todos' },
     { to: '/portfolios', icon: Briefcase, label: 'Portafolios' },
     { to: '/expenses/estado', icon: CreditCard, label: 'Presupuestos' },
