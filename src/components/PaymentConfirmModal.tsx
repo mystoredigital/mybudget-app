@@ -122,11 +122,15 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
             // Trigger sync webhook if configured
             if (settings.webhook_sync) {
                 try {
-                    await fetch(settings.webhook_sync, {
+                    const res = await fetch(settings.webhook_sync, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(updatedData),
+                        signal: AbortSignal.timeout(5000),
                     });
+                    if (!res.ok) {
+                        console.error(`Webhook de sync respondió ${res.status} ${res.statusText}`);
+                    }
                 } catch (webhookError) {
                     console.error('No se pudo enviar al webhook de sync:', webhookError);
                 }
@@ -182,6 +186,8 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
                         frecuencia: expense.frecuencia,
                         cuenta: expense.cuenta || '',
                         nombre: expense.nombre || '',
+                        link: expense.link || null,
+                        phone: expense.phone || null,
                     }]);
                 }
             }
@@ -248,6 +254,8 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
                     frecuencia: expense.frecuencia || 'Unico',
                     cuenta: expense.cuenta || '',
                     nombre: expense.nombre || '',
+                    link: expense.link || null,
+                    phone: expense.phone || null,
                     comment: `Pago vencido de ${expense.fecha || 'mes anterior'} (${formatCurrency(expense.valor, expense.moneda)}) + cuota actual`,
                 }]);
                 if (insertError) throw insertError;
@@ -256,7 +264,7 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
             // 3. Notify webhook that overdue was processed
             if (settings.webhook_sync) {
                 try {
-                    await fetch(settings.webhook_sync, {
+                    const res = await fetch(settings.webhook_sync, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -265,7 +273,11 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
                             _new_value: doubleValue,
                             _new_date: nextDateStr,
                         }),
+                        signal: AbortSignal.timeout(5000),
                     });
+                    if (!res.ok) {
+                        console.error(`Webhook de sync respondió ${res.status} ${res.statusText}`);
+                    }
                 } catch (webhookError) {
                     console.error('No se pudo enviar al webhook de sync:', webhookError);
                 }

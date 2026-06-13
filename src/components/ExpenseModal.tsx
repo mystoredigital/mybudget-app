@@ -218,14 +218,17 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
             }
 
             // Webhook n8n (opcional)
-            const activeWebhook = settings.webhook_sync || 'https://n8n.mystoredigital.cloud/webhook/sync-expense-calendar';
-            if (formData.fecha && activeWebhook) {
+            if (formData.fecha && settings.webhook_sync) {
                 try {
-                    await fetch(activeWebhook, {
+                    const res = await fetch(settings.webhook_sync, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(dataResult),
+                        signal: AbortSignal.timeout(5000),
                     });
+                    if (!res.ok) {
+                        console.error(`Webhook n8n respondió ${res.status} ${res.statusText}`);
+                    }
                 } catch (webhookError) {
                     console.error('No se pudo contactar al webhook n8n:', webhookError);
                 }
