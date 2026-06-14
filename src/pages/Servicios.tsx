@@ -28,7 +28,7 @@ export default function Servicios() {
     const [refreshKey, setRefreshKey] = useState(0);
     const [modalOpen, setModalOpen] = useState(false);
     const [toEdit, setToEdit] = useState<Servicio | null>(null);
-    const [vista, setVista] = useState<'grid' | 'lista'>('grid');
+    const [vista, setVista] = useState<'grid' | 'lista'>('lista');
 
     useEffect(() => {
         async function fetchData() {
@@ -172,25 +172,49 @@ export default function Servicios() {
                     })}
                 </div>
             ) : (
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 shadow-sm divide-y divide-zinc-50 dark:divide-zinc-800/50 overflow-hidden">
-                    {servicios.map(s => {
-                        const sem = semaforo(s.dias_para_renovar);
-                        return (
-                            <div key={s.id} className="flex items-center gap-3 px-4 sm:px-5 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group">
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-zinc-900 dark:text-white text-sm truncate">{s.nombre}</p>
-                                    <p className="text-[11px] text-zinc-400 font-semibold truncate">{s.categoria}{s.proveedor ? ` · ${s.proveedor}` : ''}{s.cliente ? ` · ${s.cliente}` : ''}</p>
-                                </div>
-                                <span className={`hidden sm:inline-block text-[11px] font-bold px-2.5 py-1 rounded-full shrink-0 ${sem.cls}`}>{sem.label}</span>
-                                <span className="font-bold text-zinc-900 dark:text-white text-sm w-24 text-right shrink-0">{formatCurrency(s.costo, s.moneda)}</span>
-                                {s.url_panel && (
-                                    <a href={s.url_panel} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 shrink-0" title="Abrir panel"><ExternalLink className="w-4 h-4" /></a>
-                                )}
-                                <button onClick={() => generarPago(s)} className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 dark:bg-teal-700 text-white text-xs font-bold hover:bg-zinc-800 shrink-0" title="Generar pago"><Receipt className="w-3.5 h-3.5" /> Pago</button>
-                                <button onClick={() => { setToEdit(s); setModalOpen(true); }} className="text-zinc-300 hover:text-teal-600 transition-colors shrink-0"><Pencil className="w-4 h-4" /></button>
-                            </div>
-                        );
-                    })}
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-x-auto">
+                    <table className="w-full text-left text-sm min-w-[640px]">
+                        <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-400 font-bold border-b border-zinc-100 dark:border-zinc-800 text-[10px] uppercase tracking-wider">
+                            <tr>
+                                <th className="px-5 py-3">Servicio</th>
+                                <th className="px-4 py-3">Categoría</th>
+                                <th className="px-4 py-3">Estado</th>
+                                <th className="px-4 py-3">Ciclo</th>
+                                <th className="px-4 py-3 text-right">Valor</th>
+                                <th className="px-4 py-3 text-center w-[120px]">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+                            {servicios.map(s => {
+                                const sem = semaforo(s.dias_para_renovar);
+                                return (
+                                    <tr key={s.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors group">
+                                        <td className="px-5 py-3">
+                                            <p className="font-bold text-zinc-900 dark:text-white text-[13px] truncate">{s.nombre}</p>
+                                            <p className="text-[11px] text-zinc-400 font-medium truncate">{s.proveedor || s.cliente || '—'}</p>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-0.5 rounded-md text-[11px] font-semibold whitespace-nowrap">{s.categoria}</span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${sem.cls}`}>{sem.label}</span>
+                                        </td>
+                                        <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400 text-[12px] whitespace-nowrap">{s.ciclo}</td>
+                                        <td className="px-4 py-3 text-right font-bold text-zinc-900 dark:text-white whitespace-nowrap">{formatCurrency(s.costo, s.moneda)}</td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <button onClick={() => generarPago(s)} className="w-7 h-7 rounded-lg inline-flex items-center justify-center bg-zinc-900 dark:bg-teal-700 text-white hover:bg-zinc-800 transition-colors" title="Generar pago"><Receipt className="w-3.5 h-3.5" /></button>
+                                                {s.url_panel ? (
+                                                    <a href={s.url_panel} target="_blank" rel="noopener noreferrer" className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-blue-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" title="Abrir panel"><ExternalLink className="w-4 h-4" /></a>
+                                                ) : <span className="w-7 h-7 inline-block" />}
+                                                <button onClick={() => { setToEdit(s); setModalOpen(true); }} className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-zinc-300 hover:text-teal-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="Editar"><Pencil className="w-4 h-4" /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
             )}
 
