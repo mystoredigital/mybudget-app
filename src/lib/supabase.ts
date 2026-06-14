@@ -44,6 +44,7 @@ export type Expense = {
   portafolio: string;
   frecuencia: Frecuencia;
   cuenta_id: string | null; // v2: cuenta de la que salió el pago
+  servicio_id: string | null; // v2: servicio que generó este pago
   created_at: string;
   updated_at: string;
   vence_en?: string; // From view
@@ -220,3 +221,30 @@ export type TasaCambio = {
   fuente: 'api' | 'manual';
   created_at: string;
 };
+
+// ── v2: Servicios / Dominios contratados ──
+
+export type ServicioCiclo = 'Mensual' | 'Bimestral' | 'Trimestral' | 'Semestral' | 'Anual';
+
+export type Servicio = {
+  id: string;
+  user_id: string;
+  nombre: string;
+  categoria: string;
+  proveedor: string | null;
+  cliente: string | null;
+  costo: number;
+  moneda: Currency;
+  ciclo: ServicioCiclo;
+  fecha_renovacion: string;
+  auto_renueva: boolean;
+  url_panel: string | null;
+  notas: string | null;
+  dias_alerta: number[];
+  activo: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+// Fila de servicios_view (servicio + días para renovar)
+export type ServicioView = Servicio & { dias_para_renovar: number };
