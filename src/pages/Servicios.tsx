@@ -74,6 +74,14 @@ export default function Servicios() {
 
     const proximos = servicios.filter(s => s.dias_para_renovar <= 30);
 
+    // Agrupar por categoría conservando el orden por fecha de renovación.
+    // (servicios ya viene ordenado asc, así que cada grupo queda en ese orden
+    //  y las categorías aparecen según su servicio más próximo a renovar.)
+    const grupos = servicios.reduce<Record<string, ServicioView[]>>((acc, s) => {
+        (acc[s.categoria] = acc[s.categoria] || []).push(s);
+        return acc;
+    }, {});
+
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -113,39 +121,53 @@ export default function Servicios() {
                     <p className="text-zinc-500 font-medium">Aún no tienes servicios. Agrega tu primer dominio o suscripción.</p>
                 </div>
             ) : vista === 'grid' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {servicios.map(s => {
-                        const sem = semaforo(s.dias_para_renovar);
+                <div className="space-y-6">
+                    {Object.keys(grupos).map((categoria) => {
+                        const items = grupos[categoria];
                         return (
-                            <div key={s.id} className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-100 dark:border-zinc-800 shadow-sm flex flex-col gap-3 group">
-                                <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                        <p className="font-bold text-zinc-900 dark:text-white truncate">{s.nombre}</p>
-                                        <p className="text-[11px] text-zinc-400 font-semibold">{s.categoria}{s.proveedor ? ` · ${s.proveedor}` : ''}</p>
-                                    </div>
-                                    <button onClick={() => { setToEdit(s); setModalOpen(true); }} className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-teal-600 transition-all shrink-0">
-                                        <Pencil className="w-4 h-4" />
-                                    </button>
-                                </div>
-
-                                <span className={`self-start text-[11px] font-bold px-2.5 py-1 rounded-full ${sem.cls}`}>{sem.label}</span>
-
-                                <div className="flex items-end justify-between mt-1">
-                                    <div>
-                                        <p className="text-lg font-extrabold text-zinc-900 dark:text-white">{formatCurrency(s.costo, s.moneda)}</p>
-                                        <p className="text-[11px] text-zinc-400 font-medium">{s.ciclo} · {s.cliente || 'sin cliente'}</p>
-                                    </div>
-                                    {s.url_panel && (
-                                        <a href={s.url_panel} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600" title="Abrir panel">
-                                            <ExternalLink className="w-4 h-4" />
-                                        </a>
-                                    )}
-                                </div>
-
-                                <button onClick={() => generarPago(s)} className="mt-1 flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-zinc-900 dark:bg-teal-700 text-white text-sm font-bold hover:bg-zinc-800 dark:hover:bg-teal-600 transition-colors">
-                                    <Receipt className="w-4 h-4" /> Generar pago
-                                </button>
+                        <div key={categoria}>
+                            <div className="flex items-center gap-2 mb-3">
+                                <Globe className="w-4 h-4 text-teal-500" />
+                                <h2 className="font-bold text-zinc-900 dark:text-white">{categoria}</h2>
+                                <span className="text-[11px] font-bold text-teal-700 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-300 px-2 py-0.5 rounded-full">{items.length}</span>
                             </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
+                                {items.map(s => {
+                                    const sem = semaforo(s.dias_para_renovar);
+                                    return (
+                                        <div key={s.id} className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-100 dark:border-zinc-800 shadow-sm flex flex-col gap-3 h-full group">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <p className="font-bold text-zinc-900 dark:text-white truncate">{s.nombre}</p>
+                                                    <p className="text-[11px] text-zinc-400 font-semibold truncate">{s.proveedor || s.cliente || '—'}</p>
+                                                </div>
+                                                <button onClick={() => { setToEdit(s); setModalOpen(true); }} className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-teal-600 transition-all shrink-0">
+                                                    <Pencil className="w-4 h-4" />
+                                                </button>
+                                            </div>
+
+                                            <span className={`self-start text-[11px] font-bold px-2.5 py-1 rounded-full ${sem.cls}`}>{sem.label}</span>
+
+                                            <div className="flex items-end justify-between mt-1">
+                                                <div>
+                                                    <p className="text-lg font-extrabold text-zinc-900 dark:text-white">{formatCurrency(s.costo, s.moneda)}</p>
+                                                    <p className="text-[11px] text-zinc-400 font-medium">{s.ciclo} · {s.cliente || 'sin cliente'}</p>
+                                                </div>
+                                                {s.url_panel && (
+                                                    <a href={s.url_panel} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600" title="Abrir panel">
+                                                        <ExternalLink className="w-4 h-4" />
+                                                    </a>
+                                                )}
+                                            </div>
+
+                                            <button onClick={() => generarPago(s)} className="mt-auto flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-zinc-900 dark:bg-teal-700 text-white text-sm font-bold hover:bg-zinc-800 dark:hover:bg-teal-600 transition-colors">
+                                                <Receipt className="w-4 h-4" /> Generar pago
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                         );
                     })}
                 </div>
