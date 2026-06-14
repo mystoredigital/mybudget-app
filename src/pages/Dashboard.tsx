@@ -1,22 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { supabase, Expense } from '../lib/supabase';
+import { supabase, Expense, CuentaSaldo, TasaCambio, ServicioView, PortfolioPeriod, PortfolioPeriodItem } from '../lib/supabase';
 import { formatCurrency } from '../lib/utils';
-import { ArrowUpRight, DollarSign, Clock, CheckCircle, Plus, TrendingDown, AlertTriangle } from 'lucide-react';
+import { Plus, Clock, CheckCircle, AlertTriangle, Globe, Wallet, Users, ArrowRight, TrendingUp } from 'lucide-react';
 import ExpenseModal from '../components/ExpenseModal';
 import PaymentConfirmModal from '../components/PaymentConfirmModal';
-import { format, endOfMonth } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
-
-const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [allExpenses, setAllExpenses] = useState<Expense[]>([]);
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-
-  const currentDate = new Date();
-  const [displayMonth, setDisplayMonth] = useState(currentDate.getMonth());
-  const [displayYear, setDisplayYear] = useState(currentDate.getFullYear());
+  const [cuentas, setCuentas] = useState<CuentaSaldo[]>([]);
+  const [rate, setRate] = useState<number | null>(null);
+  const [pendientes, setPendientes] = useState<Expense[]>([]);
+  const [servicios, setServicios] = useState<ServicioView[]>([]);
+  const [socio, setSocio] = useState<{ nombre: string; leDebo: number; cur: string; mes: string } | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [expenseToEdit, setExpenseToEdit] = useState<Expense | null>(null);
@@ -25,382 +24,211 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function fetchData() {
+      setLoading(true);
       try {
-        setLoading(true);
-        const start = format(new Date(displayYear, displayMonth, 1), 'yyyy-MM-dd');
-        const end = format(endOfMonth(new Date(displayYear, displayMonth, 1)), 'yyyy-MM-dd');
+        const [cuentasRes, tasaRes, pendRes, servRes, periodRes] = await Promise.all([
+          supabase.from('cuentas_saldos').select('*'),
+          supabase.from('tasas_cambio').select('*').eq('par', 'USD_COP').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+          supabase.from('expenses_view').select('*').eq('status', 'Pendiente').order('fecha', { ascending: true }).limit(40),
+          supabase.from('servicios_view').select('*').eq('activo', true).lte('dias_para_renovar', 30).order('fecha_renovacion', { ascending: true }),
+          supabase.from('portfolio_periods').select('*').order('period_month', { ascending: false }).limit(1).maybeSingle(),
+        ]);
+        if (cuentasRes.data) setCuentas(cuentasRes.data as CuentaSaldo[]);
+        setRate(tasaRes.data ? Number((tasaRes.data as TasaCambio).valor) : null);
+        if (pendRes.data) setPendientes(pendRes.data as Expense[]);
+        if (servRes.data) setServicios(servRes.data as ServicioView[]);
 
-        const { data, error } = await supabase
-          .from('expenses_view')
-          .select('*')
-          .gte('fecha', start)
-          .lte('fecha', end)
-          .order('fecha', { ascending: true });
-
-        if (error) throw error;
-        if (data) setAllExpenses(data as Expense[]);
+        // Socio: liquidación del periodo más reciente
+        const period = periodRes.data as PortfolioPeriod | null;
+        if (period) {
+          const [{ data: its }, { data: part }] = await Promise.all([
+            supabase.from('portfolio_period_items').select('*').eq('period_id', period.id),
+            supabase.from('portfolio_partners').select('name').eq('portfolio_id', period.portfolio_id).limit(1).maybeSingle(),
+          ]);
+          const items = (its as PortfolioPeriodItem[]) || [];
+          const s = (t: string) => items.filter(i => i.tipo === t).reduce((a, c) => a + Number(c.monto), 0);
+          const neto = s('ingreso') - s('gasto_compartido');
+          const leDebo = neto * (Number(period.partner_percent) / 100) - s('descuento_socio');
+          setSocio({ nombre: (part as any)?.name || 'Socio', leDebo, cur: period.currency, mes: period.period_month });
+        } else {
+          setSocio(null);
+        }
       } catch (err) {
-        console.error('Error fetching dashboard:', err);
+        console.error('Error cargando panel:', err);
       } finally {
         setLoading(false);
       }
     }
     fetchData();
-  }, [refreshKey, displayMonth, displayYear]);
+  }, [refreshKey]);
 
-  // Calculations
-  const pendientes = allExpenses.filter(e => e.status === 'Pendiente');
-  const pagados = allExpenses.filter(e => e.status === 'Pagado');
+  const totalCOP = cuentas.filter(c => c.moneda === 'COP' && !c.archivada).reduce((a, c) => a + Number(c.saldo_actual), 0);
+  const totalUSD = cuentas.filter(c => c.moneda === 'USD' && !c.archivada).reduce((a, c) => a + Number(c.saldo_actual), 0);
+  const combinado = rate ? totalCOP + totalUSD * rate : null;
 
-  const pendienteCOP = pendientes.filter(e => (e.moneda || 'COP') === 'COP').reduce((a, c) => a + Number(c.valor), 0);
-  const pendienteUSD = pendientes.filter(e => e.moneda === 'USD').reduce((a, c) => a + Number(c.valor), 0);
-  const pagadoCOP = pagados.filter(e => (e.moneda || 'COP') === 'COP').reduce((a, c) => a + Number(c.valor), 0);
-  const pagadoUSD = pagados.filter(e => e.moneda === 'USD').reduce((a, c) => a + Number(c.valor), 0);
-  const totalCOP = pendienteCOP + pagadoCOP;
-  const totalUSD = pendienteUSD + pagadoUSD;
-
-  const vencidos = pendientes.filter(e => e.vence_en?.startsWith('Venci') || e.vence_en?.startsWith('Vence hoy'));
-  const proximos = pendientes.filter(e => !e.vence_en?.startsWith('Venci') && !e.vence_en?.startsWith('Vence hoy'));
-
-  const progressPercent = allExpenses.length > 0 ? Math.round((pagados.length / allExpenses.length) * 100) : 0;
-
-  const openExpenseModal = (expense?: Expense) => {
-    setExpenseToEdit(expense || null);
-    setIsModalOpen(true);
-  };
+  const isOverdue = (e: Expense) => e.vence_en?.startsWith('Venci') || e.vence_en?.startsWith('Vence hoy');
+  const vencidos = pendientes.filter(isOverdue);
+  const nombre = user?.email?.split('@')[0] || '';
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-[32px] font-semibold text-zinc-900 tracking-tight leading-tight dark:text-white">Dashboard</h1>
-          <p className="text-zinc-500 font-medium mt-1 dark:text-zinc-400">Resumen de {monthNames[displayMonth]} {displayYear}</p>
+          <h1 className="text-[32px] font-semibold text-zinc-900 tracking-tight leading-tight dark:text-white capitalize">Hola, {nombre} 👋</h1>
+          <p className="text-zinc-500 font-medium mt-1 dark:text-zinc-400">Tu panel de control financiero</p>
         </div>
-        <div className="flex items-center gap-3">
-          <select
-            value={displayMonth}
-            onChange={(e) => setDisplayMonth(Number(e.target.value))}
-            className="bg-white border border-zinc-200 rounded-full text-sm font-bold text-zinc-700 py-3 px-5 focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-sm outline-none dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200"
-          >
-            {monthNames.map((m, i) => (
-              <option key={m} value={i}>{m}</option>
-            ))}
-          </select>
-          <select
-            value={displayYear}
-            onChange={(e) => setDisplayYear(Number(e.target.value))}
-            className="bg-white border border-zinc-200 rounded-full text-sm font-bold text-zinc-700 py-3 px-5 focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-sm outline-none dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200"
-          >
-            {Array.from({ length: 5 }, (_, i) => currentDate.getFullYear() - 2 + i).map(year => (
-              <option key={year} value={year}>{year}</option>
-            ))}
-          </select>
-          <button onClick={() => openExpenseModal()} className="flex items-center gap-2 bg-teal-900 text-white px-5 py-3 rounded-full font-bold shadow-md shadow-teal-900/20 hover:bg-teal-800 hover:-translate-y-0.5 transition-all text-sm shrink-0 dark:bg-teal-700 dark:shadow-teal-700/20">
-            <Plus className="w-5 h-5" /> <span className="hidden sm:inline">Nueva Inversión</span>
-          </button>
-        </div>
+        <button onClick={() => { setExpenseToEdit(null); setIsModalOpen(true); }} className="flex items-center gap-2 bg-zinc-900 dark:bg-zinc-800 text-white px-5 py-3 rounded-full font-bold shadow-md hover:-translate-y-0.5 transition-all text-sm shrink-0">
+          <Plus className="w-5 h-5" /> Nuevo Gasto
+        </button>
       </div>
 
       {loading ? (
-        <div className="animate-pulse py-12 text-zinc-500 font-medium text-center">Cargando datos del mes...</div>
+        <div className="animate-pulse py-12 text-zinc-500 font-medium text-center">Cargando tu panel...</div>
       ) : (
         <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            {/* Pendiente */}
-            <div className="bg-white rounded-2xl p-5 border border-zinc-100 shadow-sm dark:bg-zinc-900 dark:border-zinc-800">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center dark:bg-amber-900/30">
-                  <Clock className="w-4 h-4 text-amber-600" />
+          {/* Hero: Lo que tengo (degradado naranja) */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 rounded-3xl p-7 text-white shadow-lg shadow-orange-500/20 bg-gradient-to-br from-orange-500 via-orange-500 to-amber-400 relative overflow-hidden">
+              <div className="absolute -right-8 -top-8 w-48 h-48 rounded-full bg-white/10" />
+              <div className="absolute right-16 bottom-0 w-32 h-32 rounded-full bg-white/5" />
+              <div className="relative">
+                <div className="flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-white/70" />
+                  <span className="text-[11px] font-bold text-white/70 uppercase tracking-wider">Lo que tengo</span>
                 </div>
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Pendiente</span>
+                <div className="flex flex-wrap items-end gap-x-8 gap-y-2 mt-3">
+                  <div>
+                    <p className="text-4xl font-extrabold tracking-tight">{formatCurrency(totalCOP, 'COP')}</p>
+                    <p className="text-[11px] text-white/60 font-semibold mt-0.5">COP</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-white/90">{formatCurrency(totalUSD, 'USD')}</p>
+                    <p className="text-[11px] text-white/60 font-semibold mt-0.5">USD</p>
+                  </div>
+                  {combinado != null && (
+                    <div className="ml-auto text-right">
+                      <p className="text-sm font-bold">≈ {formatCurrency(combinado, 'COP')}</p>
+                      <p className="text-[11px] text-white/60 font-semibold">total · dólar {rate}</p>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => navigate('/cuentas')} className="mt-5 inline-flex items-center gap-1.5 text-sm font-bold bg-white/20 hover:bg-white/30 px-4 py-2 rounded-full transition-colors">
+                  Ver cuentas <ArrowRight className="w-4 h-4" />
+                </button>
               </div>
-              <p className="text-xl font-extrabold text-zinc-900 dark:text-white">{formatCurrency(pendienteCOP, 'COP')}</p>
-              <p className="text-[10px] text-zinc-400 font-semibold">COP</p>
-              {pendienteUSD > 0 && <p className="text-sm font-bold text-zinc-500 mt-1">{formatCurrency(pendienteUSD, 'USD')} <span className="text-[10px]">USD</span></p>}
-              <p className="text-xs text-amber-600 font-semibold mt-2">{pendientes.length} movimientos</p>
             </div>
 
-            {/* Pagado */}
-            <div className="bg-white rounded-2xl p-5 border border-zinc-100 shadow-sm dark:bg-zinc-900 dark:border-zinc-800">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center dark:bg-emerald-900/30">
-                  <CheckCircle className="w-4 h-4 text-emerald-600" />
-                </div>
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Pagado</span>
-              </div>
-              <p className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">{formatCurrency(pagadoCOP, 'COP')}</p>
-              <p className="text-[10px] text-zinc-400 font-semibold">COP</p>
-              {pagadoUSD > 0 && <p className="text-sm font-bold text-zinc-500 mt-1">{formatCurrency(pagadoUSD, 'USD')} <span className="text-[10px]">USD</span></p>}
-              <p className="text-xs text-emerald-600 font-semibold mt-2">{pagados.length} movimientos</p>
-            </div>
-
-            {/* Total Mes */}
-            <div className="bg-zinc-900 rounded-2xl p-5 text-white shadow-sm dark:bg-zinc-800">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-                  <DollarSign className="w-4 h-4 text-white/80" />
-                </div>
-                <span className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Total Mes</span>
-              </div>
-              <p className="text-xl font-extrabold">{formatCurrency(totalCOP, 'COP')}</p>
-              <p className="text-[10px] text-white/40 font-semibold">COP</p>
-              {totalUSD > 0 && <p className="text-sm font-bold text-white/70 mt-1">{formatCurrency(totalUSD, 'USD')} <span className="text-[10px]">USD</span></p>}
-              <p className="text-xs text-white/50 font-semibold mt-2">{allExpenses.length} total</p>
-            </div>
-
-            {/* Progreso */}
-            <div className="bg-white rounded-2xl p-5 border border-zinc-100 shadow-sm dark:bg-zinc-900 dark:border-zinc-800">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center dark:bg-teal-900/30">
-                  <TrendingDown className="w-4 h-4 text-teal-600" />
-                </div>
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Progreso</span>
-              </div>
-              <p className="text-xl font-extrabold text-zinc-900 dark:text-white">{progressPercent}%</p>
-              <div className="w-full bg-zinc-100 rounded-full h-2 mt-3 dark:bg-zinc-800">
-                <div className="bg-teal-500 h-2 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
-              </div>
-              <p className="text-xs text-teal-600 font-semibold mt-2">{pagados.length} de {allExpenses.length}</p>
-            </div>
-
-            {/* Vencidos */}
-            <div className={`rounded-2xl p-5 border shadow-sm ${vencidos.length > 0 ? 'bg-rose-50 border-rose-100 dark:bg-rose-900/20 dark:border-rose-800' : 'bg-white border-zinc-100 dark:bg-zinc-900 dark:border-zinc-800'}`}>
-              <div className="flex items-center gap-2 mb-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${vencidos.length > 0 ? 'bg-rose-100 dark:bg-rose-900/40' : 'bg-zinc-100 dark:bg-zinc-800'}`}>
-                  <AlertTriangle className={`w-4 h-4 ${vencidos.length > 0 ? 'text-rose-600' : 'text-zinc-400'}`} />
-                </div>
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Vencidos</span>
-              </div>
-              <p className={`text-xl font-extrabold ${vencidos.length > 0 ? 'text-rose-600' : 'text-zinc-900 dark:text-white'}`}>{vencidos.length}</p>
-              <p className="text-xs text-zinc-500 font-semibold mt-2">
-                {vencidos.length > 0 ? 'Requieren atención' : 'Al día ✓'}
-              </p>
-            </div>
-          </div>
-
-          {/* Pending Payments Table */}
-          <div className="bg-white rounded-2xl shadow-sm border border-zinc-100 overflow-hidden dark:bg-zinc-900 dark:border-zinc-800">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
+            {/* Socio */}
+            <div onClick={() => navigate('/portfolios')} className="rounded-3xl p-6 border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-between cursor-pointer hover:shadow-md transition-shadow">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-amber-500" />
-                <h3 className="font-bold text-zinc-900 dark:text-white">Pagos Pendientes del Mes</h3>
-                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full dark:bg-amber-900/30">{pendientes.length}</span>
+                <Users className="w-4 h-4 text-teal-500" />
+                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Le debo al socio</span>
               </div>
-              <button onClick={() => navigate('/expenses/estado')} className="text-teal-700 dark:text-teal-400 font-semibold text-sm hover:underline">
-                Ver Presupuesto →
-              </button>
-            </div>
-
-            {/* Mobile View - Pending */}
-            <div className="block md:hidden divide-y divide-zinc-100 dark:divide-zinc-800">
-              {pendientes.length === 0 ? (
-                <div className="p-8 text-center text-zinc-500 font-medium">
-                  🎉 Todo al día este mes. ¡Sin pendientes!
+              {socio ? (
+                <div className="mt-2">
+                  <p className="text-3xl font-extrabold text-teal-700 dark:text-teal-400">{formatCurrency(socio.leDebo, socio.cur as any)}</p>
+                  <p className="text-[11px] text-zinc-400 font-semibold mt-1">{socio.nombre} · último periodo</p>
                 </div>
               ) : (
-                pendientes.map(expense => {
-                  const isOverdue = expense.vence_en?.startsWith('Venci') || expense.vence_en?.startsWith('Vence hoy');
-                  const venceColor = isOverdue ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-amber-600 dark:text-amber-400';
-
-                  return (
-                    <div
-                      key={expense.id}
-                      onClick={() => openExpenseModal(expense)}
-                      className="p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer flex flex-col gap-3 group"
-                    >
-                      <div className="flex justify-between items-start gap-4">
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-zinc-900 dark:text-zinc-100 text-sm truncate group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">{expense.expense}</h4>
-                          {expense.cuenta && <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-0.5 truncate">{expense.cuenta}</p>}
-                        </div>
-                        <div className="text-right shrink-0">
-                          <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm">{formatCurrency(expense.valor, expense.moneda)}</span>
-                          <span className="text-[10px] ml-1 text-zinc-400 font-semibold">{expense.moneda || 'COP'}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-0.5 rounded-md text-[10px] font-semibold truncate max-w-[120px]">
-                          {expense.categoria}
-                        </span>
-                        <div className="flex items-center gap-3">
-                          <span className={`text-[11px] font-bold ${venceColor}`}>
-                            {expense.vence_en || 'Pendiente'}
-                          </span>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setPaymentModalExpense(expense); }}
-                            className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 dark:hover:bg-emerald-900/30 text-zinc-400 transition-colors shadow-sm"
-                          >
-                            <CheckCircle className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
+                <p className="text-sm text-zinc-400 font-medium mt-2">Sin portafolios activos</p>
               )}
-            </div>
-
-            {/* Desktop View - Pending */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-zinc-50 text-zinc-400 font-bold border-b border-zinc-100 text-[10px] uppercase tracking-wider dark:bg-zinc-800/50 dark:border-zinc-800">
-                  <tr>
-                    <th className="px-5 py-3">Inversión</th>
-                    <th className="px-4 py-3 text-right">Valor</th>
-                    <th className="px-4 py-3">Categoría</th>
-                    <th className="px-4 py-3">Vence</th>
-                    <th className="px-4 py-3 text-center w-[60px]">✓</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-                  {pendientes.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-5 py-8 text-center text-zinc-500 font-medium">
-                        🎉 Todo al día este mes. ¡Sin pendientes!
-                      </td>
-                    </tr>
-                  ) : (
-                    pendientes.map(expense => {
-                      const isOverdue = expense.vence_en?.startsWith('Venci') || expense.vence_en?.startsWith('Vence hoy');
-                      const venceColor = isOverdue ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-amber-600 dark:text-amber-400';
-
-                      return (
-                        <tr
-                          key={expense.id}
-                          onClick={() => openExpenseModal(expense)}
-                          className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer group"
-                        >
-                          <td className="px-5 py-3">
-                            <p className="font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors text-[13px]">{expense.expense}</p>
-                            {expense.cuenta && <p className="text-[11px] text-zinc-400 mt-0.5">{expense.cuenta}</p>}
-                          </td>
-                          <td className="px-4 py-3 text-right whitespace-nowrap">
-                            <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[13px]">{formatCurrency(expense.valor, expense.moneda)}</span>
-                            <span className="text-[10px] ml-1 text-zinc-400 font-semibold">{expense.moneda || 'COP'}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-0.5 rounded-md text-[11px] font-semibold">{expense.categoria}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`text-[11px] font-bold ${venceColor}`}>
-                              {expense.vence_en || 'Pendiente'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setPaymentModalExpense(expense); }}
-                              className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 dark:hover:bg-emerald-900/30 text-zinc-400 transition-colors shadow-sm"
-                              title="Marcar como pagado"
-                            >
-                              <CheckCircle className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
             </div>
           </div>
 
-          {/* Recently Paid */}
-          {pagados.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-zinc-100 overflow-hidden dark:bg-zinc-900 dark:border-zinc-800">
+          {/* Stat chips */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatChip icon={Clock} color="amber" label="Pagos pendientes" value={String(pendientes.length)} hint="próximos" />
+            <StatChip icon={AlertTriangle} color="rose" label="Vencidos" value={String(vencidos.length)} hint={vencidos.length ? 'requieren atención' : 'al día ✓'} />
+            <StatChip icon={Globe} color="blue" label="Servicios" value={String(servicios.length)} hint="renuevan en 30 días" onClick={() => navigate('/servicios')} />
+            <StatChip icon={TrendingUp} color="emerald" label="Dólar hoy" value={rate ? formatCurrency(rate, 'COP') : '—'} hint="COP / USD" onClick={() => navigate('/cuentas')} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Próximos pagos */}
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-100 dark:border-zinc-800 overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
-                  <h3 className="font-bold text-zinc-900 dark:text-white">Pagados este Mes</h3>
-                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full dark:bg-emerald-900/30">{pagados.length}</span>
+                  <Clock className="w-4 h-4 text-amber-500" />
+                  <h3 className="font-bold text-zinc-900 dark:text-white">Próximos pagos</h3>
                 </div>
+                <button onClick={() => navigate('/expenses/estado')} className="text-teal-700 dark:text-teal-400 font-semibold text-sm hover:underline">Ver todo →</button>
               </div>
-
-              {/* Mobile View - Paid */}
-              <div className="block md:hidden divide-y divide-zinc-100 dark:divide-zinc-800">
-                {pagados.map(expense => (
-                  <div
-                    key={expense.id}
-                    onClick={() => openExpenseModal(expense)}
-                    className="p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer flex flex-col gap-3 group"
-                  >
-                    <div className="flex justify-between items-start gap-4">
+              <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50 max-h-[420px] overflow-y-auto">
+                {pendientes.length === 0 ? (
+                  <div className="p-8 text-center text-zinc-500 font-medium">🎉 Sin pagos pendientes.</div>
+                ) : pendientes.slice(0, 10).map(e => {
+                  const over = isOverdue(e);
+                  return (
+                    <div key={e.id} onClick={() => { setExpenseToEdit(e); setIsModalOpen(true); }} className="flex items-center gap-3 px-5 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer group">
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-zinc-900 dark:text-zinc-100 text-sm truncate group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">{expense.expense}</h4>
-                        {expense.cuenta && <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-0.5 truncate">{expense.cuenta}</p>}
+                        <p className="font-bold text-zinc-900 dark:text-zinc-100 text-sm truncate group-hover:text-teal-600">{e.expense}</p>
+                        <p className={`text-[11px] font-bold ${over ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`}>{e.vence_en || 'Pendiente'} · {e.categoria}</p>
                       </div>
-                      <div className="text-right shrink-0">
-                        <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm">{formatCurrency(expense.valor, expense.moneda)}</span>
-                        <span className="text-[10px] ml-1 text-zinc-400 font-semibold">{expense.moneda || 'COP'}</span>
-                      </div>
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm shrink-0">{formatCurrency(e.valor, e.moneda)}</span>
+                      <button onClick={(ev) => { ev.stopPropagation(); setPaymentModalExpense(e); }} className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-emerald-50 hover:text-emerald-600 text-zinc-400 transition-colors shrink-0" title="Pagar">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-0.5 rounded-md text-[10px] font-semibold truncate max-w-[120px]">
-                        {expense.categoria}
-                      </span>
-                      <span className="text-emerald-500 dark:text-emerald-400 font-bold text-[11px]">
-                        {expense.fecha} ✓
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Desktop View - Paid */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-zinc-50 text-zinc-400 font-bold border-b border-zinc-100 text-[10px] uppercase tracking-wider dark:bg-zinc-800/50 dark:border-zinc-800">
-                    <tr>
-                      <th className="px-5 py-3">Inversión</th>
-                      <th className="px-4 py-3 text-right">Valor</th>
-                      <th className="px-4 py-3">Categoría</th>
-                      <th className="px-4 py-3">Fecha</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-                    {pagados.map(expense => (
-                      <tr
-                        key={expense.id}
-                        onClick={() => openExpenseModal(expense)}
-                        className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer group"
-                      >
-                        <td className="px-5 py-3">
-                          <p className="font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors text-[13px]">{expense.expense}</p>
-                          {expense.cuenta && <p className="text-[11px] text-zinc-400 mt-0.5">{expense.cuenta}</p>}
-                        </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[13px]">{formatCurrency(expense.valor, expense.moneda)}</span>
-                          <span className="text-[10px] ml-1 text-zinc-400 font-semibold">{expense.moneda || 'COP'}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-0.5 rounded-md text-[11px] font-semibold">{expense.categoria}</span>
-                        </td>
-                        <td className="px-4 py-3 text-emerald-500 font-bold text-[11px]">
-                          {expense.fecha} ✓
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                  );
+                })}
               </div>
             </div>
-          )}
+
+            {/* Servicios próximos a renovar */}
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-100 dark:border-zinc-800 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-blue-500" />
+                  <h3 className="font-bold text-zinc-900 dark:text-white">Renuevan pronto</h3>
+                </div>
+                <button onClick={() => navigate('/servicios')} className="text-teal-700 dark:text-teal-400 font-semibold text-sm hover:underline">Ver todo →</button>
+              </div>
+              <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50 max-h-[420px] overflow-y-auto">
+                {servicios.length === 0 ? (
+                  <div className="p-8 text-center text-zinc-500 font-medium">Nada renueva en 30 días.</div>
+                ) : servicios.map(s => {
+                  const d = s.dias_para_renovar;
+                  const cls = d <= 0 ? 'text-rose-600 dark:text-rose-400' : d <= 15 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400';
+                  return (
+                    <div key={s.id} onClick={() => navigate('/servicios')} className="flex items-center gap-3 px-5 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-zinc-900 dark:text-zinc-100 text-sm truncate">{s.nombre}</p>
+                        <p className={`text-[11px] font-bold ${cls}`}>{d < 0 ? `Vencido hace ${Math.abs(d)} d` : d === 0 ? 'Renueva hoy' : `Renueva en ${d} d`} · {s.cliente || s.categoria}</p>
+                      </div>
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm shrink-0">{formatCurrency(s.costo, s.moneda)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </>
       )}
 
-      <ExpenseModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={() => setRefreshKey(prev => prev + 1)}
-        expenseToEdit={expenseToEdit}
-      />
+      <ExpenseModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSuccess={() => setRefreshKey(p => p + 1)} expenseToEdit={expenseToEdit} />
+      <PaymentConfirmModal expense={paymentModalExpense} onClose={() => setPaymentModalExpense(null)} onSuccess={() => setRefreshKey(p => p + 1)} />
+    </div>
+  );
+}
 
-      <PaymentConfirmModal
-        expense={paymentModalExpense}
-        onClose={() => setPaymentModalExpense(null)}
-        onSuccess={() => setRefreshKey(prev => prev + 1)}
-      />
+function StatChip({ icon: Icon, color, label, value, hint, onClick }: {
+  icon: React.ElementType; color: string; label: string; value: string; hint: string; onClick?: () => void;
+}) {
+  const colors: Record<string, string> = {
+    amber: 'bg-amber-50 text-amber-600 dark:bg-amber-900/30',
+    rose: 'bg-rose-50 text-rose-600 dark:bg-rose-900/30',
+    blue: 'bg-blue-50 text-blue-600 dark:bg-blue-900/30',
+    emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30',
+  };
+  return (
+    <div onClick={onClick} className={`bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-100 dark:border-zinc-800 shadow-sm ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}>
+      <div className="flex items-center gap-2 mb-3">
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${colors[color]}`}><Icon className="w-4 h-4" /></div>
+        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{label}</span>
+      </div>
+      <p className="text-xl font-extrabold text-zinc-900 dark:text-white">{value}</p>
+      <p className="text-xs text-zinc-400 font-semibold mt-1">{hint}</p>
     </div>
   );
 }

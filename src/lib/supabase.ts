@@ -43,6 +43,8 @@ export type Expense = {
   comment: string | null;
   portafolio: string;
   frecuencia: Frecuencia;
+  cuenta_id: string | null; // v2: cuenta de la que salió el pago
+  servicio_id: string | null; // v2: servicio que generó este pago
   created_at: string;
   updated_at: string;
   vence_en?: string; // From view
@@ -110,6 +112,7 @@ export type PortfolioPeriod = {
   user_id: string;
   period_month: string; // ISO date (first of month)
   gross_income: number;
+  partner_percent: number; // v2: % del socio para este periodo (variable)
   currency: Currency;
   status: PortfolioPeriodStatus;
   notes: string | null;
@@ -164,5 +167,100 @@ export type PortfolioMovementFile = {
   filename: string | null;
   mime_type: string | null;
   size: number | null;
+  created_at: string;
+};
+
+// ── v2: Tesorería (cuentas + movimientos + tasas) ──
+
+export type CuentaTipo = 'banco' | 'wallet' | 'tarjeta' | 'efectivo';
+
+export type Cuenta = {
+  id: string;
+  user_id: string;
+  nombre: string;
+  tipo: CuentaTipo;
+  moneda: Currency;
+  saldo_inicial: number;
+  archivada: boolean;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// Fila de la vista cuentas_saldos (cuenta + saldo calculado en vivo)
+export type CuentaSaldo = Cuenta & { saldo_actual: number };
+
+export type MovimientoTipo = 'ingreso' | 'gasto' | 'traslado';
+
+export type Movimiento = {
+  id: string;
+  user_id: string;
+  tipo: MovimientoTipo;
+  concepto: string;
+  fecha: string;
+  monto: number;
+  moneda: Currency;
+  cuenta_id: string | null;        // origen (gasto/traslado) o destino (ingreso)
+  cuenta_destino_id: string | null; // solo traslado
+  tasa_usada: number | null;        // USD/COP usada si hubo cambio
+  monto_destino: number | null;     // monto que llega al destino (ya descontada la comisión)
+  comision: number;                 // fee del traslado, en la moneda del origen
+  categoria: string | null;
+  status: 'Pendiente' | 'Pagado';
+  expense_id: string | null;
+  comment: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TasaCambio = {
+  id: string;
+  user_id: string;
+  fecha: string;
+  par: string; // 'USD_COP'
+  valor: number;
+  fuente: 'api' | 'manual';
+  created_at: string;
+};
+
+// ── v2: Servicios / Dominios contratados ──
+
+export type ServicioCiclo = 'Mensual' | 'Bimestral' | 'Trimestral' | 'Semestral' | 'Anual';
+
+export type Servicio = {
+  id: string;
+  user_id: string;
+  nombre: string;
+  categoria: string;
+  proveedor: string | null;
+  cliente: string | null;
+  costo: number;
+  moneda: Currency;
+  ciclo: ServicioCiclo;
+  fecha_renovacion: string;
+  auto_renueva: boolean;
+  url_panel: string | null;
+  notas: string | null;
+  dias_alerta: number[];
+  activo: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+// Fila de servicios_view (servicio + días para renovar)
+export type ServicioView = Servicio & { dias_para_renovar: number };
+
+// ── v2: Portafolio — líneas del periodo ──
+
+export type PortfolioPeriodItemTipo = 'ingreso' | 'gasto_compartido' | 'descuento_socio';
+
+export type PortfolioPeriodItem = {
+  id: string;
+  period_id: string;
+  user_id: string;
+  tipo: PortfolioPeriodItemTipo;
+  concepto: string;
+  monto: number;
+  fecha: string;
   created_at: string;
 };

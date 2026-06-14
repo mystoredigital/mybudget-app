@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, Expense } from '../lib/supabase';
+import { supabase, Expense, Cuenta } from '../lib/supabase';
 import { X, UploadCloud, CheckCircle2, Image as ImageIcon, Calendar as CalendarIcon, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
@@ -21,6 +21,8 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
     const [file, setFile] = useState<File | null>(null);
     const [preview, setPreview] = useState<string | null>(null);
     const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+    const [cuentas, setCuentas] = useState<Cuenta[]>([]);
+    const [cuentaId, setCuentaId] = useState('');
     const isSubmitting = useRef(false);
 
     useEffect(() => {
@@ -29,7 +31,13 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
             setFile(null);
             setPreview(null);
             setPaymentDate(new Date().toISOString().split('T')[0]);
+            setCuentaId('');
             isSubmitting.current = false;
+
+            // Cuentas de la misma moneda del gasto, para descontar de ahí
+            const moneda = expense.moneda || 'COP';
+            supabase.from('cuentas').select('*').eq('archivada', false).eq('moneda', moneda).order('nombre')
+                .then(({ data }) => setCuentas((data as Cuenta[]) || []));
         }
     }, [expense]);
 
@@ -106,18 +114,36 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
                 comprobanteKey = true;
             }
 
-            // 2. Actualizar estado del pago a 'Pagado'
+            // 2. Actualizar estado del pago a 'Pagado' (+ cuenta de la que salió)
             const { data: updatedData, error: updateError } = await supabase
                 .from('expenses')
                 .update({
                     status: 'Pagado',
-                    fecha: paymentDate
+                    fecha: paymentDate,
+                    cuenta_id: cuentaId || null,
                 })
                 .eq('id', expense.id)
                 .select()
                 .single();
 
             if (updateError) throw updateError;
+
+            // 2b. Si se eligió cuenta, registrar el gasto en la tesorería
+            if (cuentaId) {
+                const { error: movError } = await supabase.from('movimientos').insert([{
+                    user_id: user.id,
+                    tipo: 'gasto',
+                    concepto: expense.expense,
+                    fecha: paymentDate,
+                    monto: expense.valor,
+                    moneda: expense.moneda || 'COP',
+                    cuenta_id: cuentaId,
+                    categoria: expense.categoria,
+                    status: 'Pagado',
+                    expense_id: expense.id,
+                }]);
+                if (movError) console.error('No se pudo registrar el movimiento de tesorería:', movError);
+            }
 
             // Trigger sync webhook if configured
             if (settings.webhook_sync) {
@@ -353,6 +379,22 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
                             </div>
                         </div>
                     )}
+
+                    {/* Selector de Cuenta (de dónde sale el pago) */}
+                    <div>
+                        <label className="block text-sm font-semibold text-zinc-700 mb-2">¿De qué cuenta sale? <span className="text-zinc-400 font-normal">(opcional)</span></label>
+                        <select
+                            value={cuentaId}
+                            onChange={(e) => setCuentaId(e.target.value)}
+                            className="w-full px-5 py-3 bg-white border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none text-zinc-800 font-medium dark:bg-zinc-800 dark:border-zinc-700 dark:text-white"
+                        >
+                            <option value="">No descontar de ninguna cuenta</option>
+                            {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.moneda})</option>)}
+                        </select>
+                        {cuentas.length === 0 && (
+                            <p className="text-[11px] text-zinc-400 mt-1.5">No tienes cuentas en {expense.moneda || 'COP'}. Créalas en la sección Cuentas para descontar el pago.</p>
+                        )}
+                    </div>
 
                     {/* Selector de Fecha de Pago */}
                     <div>

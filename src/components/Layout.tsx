@@ -11,7 +11,9 @@ import {
   CreditCard,
   Briefcase,
   Coffee,
-  CircleDashed
+  CircleDashed,
+  Wallet,
+  Globe
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -25,15 +27,43 @@ export default function Layout() {
     navigate('/login');
   };
 
-  const navItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/expenses', icon: List, label: 'Todos' },
-    { to: '/portfolios', icon: Briefcase, label: 'Portafolios' },
-    { to: '/expenses/estado', icon: CreditCard, label: 'Presupuestos' },
-    { to: '/expenses/categoria', icon: PieChart, label: 'Categorías' },
-    { to: '/expenses/calendar', icon: CalendarIcon, label: 'Calendario' },
+  const navSections = [
+    {
+      title: 'Principal',
+      items: [
+        { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+        { to: '/cuentas', icon: Wallet, label: 'Cuentas' },
+        { to: '/servicios', icon: Globe, label: 'Servicios' },
+        { to: '/portfolios', icon: Briefcase, label: 'Portafolios' },
+      ],
+    },
+    {
+      title: 'Gastos',
+      items: [
+        { to: '/expenses', icon: List, label: 'Todos' },
+        { to: '/expenses/estado', icon: CreditCard, label: 'Presupuestos' },
+        { to: '/expenses/categoria', icon: PieChart, label: 'Categorías' },
+        { to: '/expenses/calendar', icon: CalendarIcon, label: 'Calendario' },
+      ],
+    },
+    {
+      title: 'Sistema',
+      items: [
+        { to: '/settings', icon: Settings, label: 'Ajustes' },
+      ],
+    },
+  ];
+
+  const mobileNav = [
+    { to: '/', icon: LayoutDashboard, label: 'Inicio' },
+    { to: '/cuentas', icon: Wallet, label: 'Cuentas' },
+    { to: '/servicios', icon: Globe, label: 'Servicios' },
+    { to: '/portfolios', icon: Briefcase, label: 'Socios' },
     { to: '/settings', icon: Settings, label: 'Ajustes' },
   ];
+
+  const isActivePath = (to: string) =>
+    location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
 
   return (
     <div className="min-h-screen bg-[#f7f9f7] dark:bg-zinc-950 flex flex-col md:flex-row p-0 md:p-4 gap-0 md:gap-4 font-sans text-zinc-900 dark:text-zinc-50 transition-colors">
@@ -45,27 +75,29 @@ export default function Layout() {
           <span className="font-bold text-xl tracking-tight text-teal-900 dark:text-teal-400">MyBudget</span>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to));
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={() =>
-                  cn(
-                    "flex items-center gap-4 px-5 py-4 rounded-3xl text-[15px] font-semibold transition-all duration-200",
-                    isActive
-                      ? "bg-teal-900 text-white shadow-md shadow-teal-900/20 translate-x-1 dark:bg-teal-600 dark:shadow-teal-900/40"
-                      : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-100"
-                  )
-                }
-              >
-                <item.icon className={cn("w-5 h-5", item.to === '/' && !location.pathname.includes('/expenses') && !location.pathname.includes('/settings') && "text-teal-400 dark:text-teal-300")} />
-                {item.label}
-              </NavLink>
-            );
-          })}
+        <nav className="flex-1 px-4 space-y-5 mt-2 overflow-y-auto">
+          {navSections.map((section) => (
+            <div key={section.title} className="space-y-1">
+              <p className="px-5 text-[10px] font-bold text-zinc-300 dark:text-zinc-600 uppercase tracking-widest mb-1">{section.title}</p>
+              {section.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={() =>
+                    cn(
+                      "flex items-center gap-4 px-5 py-3 rounded-3xl text-[15px] font-semibold transition-all duration-200",
+                      isActivePath(item.to)
+                        ? "bg-teal-900 text-white shadow-md shadow-teal-900/20 translate-x-1 dark:bg-teal-600 dark:shadow-teal-900/40"
+                        : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-100"
+                    )
+                  }
+                >
+                  <item.icon className="w-5 h-5" />
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          ))}
         </nav>
 
         {/* User Card */}
@@ -113,8 +145,8 @@ export default function Layout() {
 
       {/* Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-around p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.1)] z-50">
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to));
+        {mobileNav.map((item) => {
+          const isActive = isActivePath(item.to);
           return (
             <NavLink
               key={item.to}
