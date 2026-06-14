@@ -10,56 +10,94 @@ BASE = env('N8N_BASE_URL'); KEY = env('N8N_API_KEY'); SR = env('SUPABASE_SERVICE
 UID = '2600227a-e1d2-4995-aa23-0ec46958002a'
 SUPA = 'https://tdwfsftgcbktekgknduj.supabase.co/rest/v1'
 TG = {'telegramApi': {'id': 'SNuF3zPIkSDlK9RO', 'name': 'Telegram account'}}
+OR_CRED = {'openRouterApi': {'id': 'GlqsWgvvC13mpS4n', 'name': 'OpenRouter account'}}
 
-# Parser + insert SIN IA (gratis, sin cuotas). Lee text o caption (fotos).
-procesar_code = r"""
-const SR = '__SR__';
-const SUPA = '__SUPA__';
-const UID = '__UID__';
-const m = $('Recibir Telegram').first().json.message;
-const chatId = m.chat.id;
-const text = (m.text || m.caption || '').trim();
-const cuentas = $('Cuentas').all().map(i => i.json);
-const reply = (msg) => [{ json: { chatId, message: msg } }];
+# ---- Nodo 1 (Code): preparar request (foto->visión o texto) + traer cuentas ----
+preparar_code = r"""
+const SR = '__SR__'; const SUPA = '__SUPA__';
+const item = $input.first();
+const msg = item.json.message || {};
+const chatId = msg.chat && msg.chat.id;
+const caption = (msg.caption || msg.text || '').trim();
+const hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;
+
+const H = { apikey: SR, Authorization: 'Bearer ' + SR };
+const cuentas = await this.helpers.httpRequest({ method: 'GET', url: SUPA + '/cuentas?select=id,nombre,moneda&archivada=eq.false', headers: H, json: true });
+const nombres = (cuentas || []).map(c => `${c.nombre} (${c.moneda})`).join(', ');
+
+const system = `Eres un asistente que extrae UN movimiento financiero y devuelve SOLO JSON válido con las claves:
+{"tipo":"gasto"|"ingreso","monto":number,"concepto":"texto corto","cuenta":"el nombre que mejor coincida de esta lista o null","fecha":"YYYY-MM-DD o null"}.
+Lista de cuentas: [${nombres}].
+Reglas: interpreta "50 mil"=50000, "50k"=50000, "1.5 millones"=1500000. Si es la imagen de un recibo/factura, extrae el TOTAL a pagar como monto y el comercio como concepto. Si no logras determinar el monto, pon monto:0.`;
+
+let userContent;
+if (hasPhoto && item.binary) {
+  const key = Object.keys(item.binary)[0];
+  const buf = await this.helpers.getBinaryDataBuffer(0, key);
+  const dataUri = 'data:image/jpeg;base64,' + buf.toString('base64');
+  userContent = [
+    { type: 'text', text: 'Lee este recibo y extrae el movimiento. Pista del usuario: ' + (caption || '(ninguna)') },
+    { type: 'image_url', image_url: { url: dataUri } },
+  ];
+} else {
+  userContent = caption || '(sin texto)';
+}
+
+const body = {
+  model: 'openai/gpt-4o-mini',
+  max_tokens: 500,
+  temperature: 0,
+  response_format: { type: 'json_object' },
+  messages: [{ role: 'system', content: system }, { role: 'user', content: userContent }],
+};
+return [{ json: { requestBody: JSON.stringify(body), chatId, rawText: caption, hasPhoto, cuentas } }];
+""".strip().replace('__SR__', SR).replace('__SUPA__', SUPA)
+
+# ---- Nodo 3 (Code): parsear IA, resolver cuenta, insertar, responder ----
+insertar_code = r"""
+const SR = '__SR__'; const SUPA = '__SUPA__'; const UID = '__UID__';
+const prep = $('Preparar').first().json;
+const chatId = prep.chatId;
+const cuentas = prep.cuentas || [];
+const rawText = (prep.rawText || '').toLowerCase();
+const reply = (m) => [{ json: { chatId, message: m } }];
 const listaCuentas = () => cuentas.map(c => `• ${c.nombre} (${c.moneda})`).join('\n') || '(no tienes cuentas)';
 
-if (!text) {
-  return reply('📸 Recibí tu mensaje pero sin texto. Escríbeme el movimiento, por ej.:\n_gasto 50 mil mercado Bancolombia_');
+let parsed = {};
+try { parsed = JSON.parse($input.first().json.choices[0].message.content); } catch (e) {}
+
+let tipo = parsed.tipo === 'ingreso' ? 'ingreso' : 'gasto';
+let monto = Number(parsed.monto);
+let concepto = (parsed.concepto || '').trim();
+let cuentaName = parsed.cuenta;
+
+// Fallback por regex sobre el texto si la IA no dio monto
+if (!(monto > 0) && rawText) {
+  if (/\b(ingreso|entr[oó]|recib|consign|abono)/.test(rawText)) tipo = 'ingreso';
+  const num = (t) => Number(String(t).replace(/\./g, '').replace(',', '.'));
+  let mMill = rawText.match(/([\d.,]+)\s*(millones|mill[oó]n)/);
+  let mMil = rawText.match(/([\d.,]+)\s*(mil|k)\b/);
+  if (mMill) monto = num(mMill[1]) * 1000000;
+  else if (mMil) monto = num(mMil[1]) * 1000;
+  else { const mN = rawText.match(/\$?\s*([\d][\d.,]*)/); if (mN) monto = num(mN[1]); }
 }
-const low = text.toLowerCase();
-
-// tipo
-let tipo = 'gasto';
-if (/\b(ingreso|ingres|entr[oó]|recib|consign|abono|me pagaron)/.test(low)) tipo = 'ingreso';
-
-// monto (formato Colombia: punto = miles, coma = decimal; soporta mil/k/millones)
-const num = (t) => Number(String(t).replace(/\./g, '').replace(',', '.'));
-let monto = NaN;
-let mMill = low.match(/([\d.,]+)\s*(millones|mill[oó]n)/);
-let mMil = low.match(/([\d.,]+)\s*(mil|k)\b/);
-if (mMill) monto = num(mMill[1]) * 1000000;
-else if (mMil) monto = num(mMil[1]) * 1000;
-else { const mN = low.match(/\$?\s*([\d][\d.,]*)/); if (mN) monto = num(mN[1]); }
 if (!(monto > 0)) {
-  return reply('🤔 No vi el monto. Ej:\n_gasto 50 mil mercado Bancolombia_\no _ingreso 200000 comisión wallet usdt_');
+  return reply('🤔 No logré sacar el monto. Escríbelo claro, ej:\n_gasto 50 mil mercado Bancolombia_\no manda la foto del recibo donde se vea el total.');
 }
 
-// cuenta: la que aparezca mencionada
-let cuenta = cuentas.find(c => low.includes(c.nombre.toLowerCase()));
+// Resolver cuenta: por lo que dijo la IA o buscando en el texto
+let cuenta = null;
+if (cuentaName) {
+  const q = String(cuentaName).toLowerCase();
+  cuenta = cuentas.find(c => c.nombre.toLowerCase() === q) || cuentas.find(c => c.nombre.toLowerCase().includes(q) || q.includes(c.nombre.toLowerCase()));
+}
+if (!cuenta && rawText) cuenta = cuentas.find(c => rawText.includes(c.nombre.toLowerCase()));
 if (!cuenta) {
-  return reply('🏦 ¿De qué cuenta? Menciona una de las tuyas:\n' + listaCuentas());
+  return reply('🏦 Detecté ' + monto + ' pero no la cuenta. Dime de cuál:\n' + listaCuentas());
 }
 
-// concepto: limpiar tipo, montos, nombre de cuenta y conectores
-let concepto = text
-  .replace(new RegExp(cuenta.nombre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), '')
-  .replace(/\b(gasto|ingreso|gast[ée]|pagu[ée]|compr[ée]|consign[ée]|recib[íi])\b/ig, '')
-  .replace(/\$?\s*[\d.,]+\s*(millones|mill[oó]n|mil|k)?/ig, '')
-  .replace(/\b(en|de|del|con|por|a la|al|para|la|el)\b/ig, ' ')
-  .replace(/\s+/g, ' ').trim();
 if (!concepto) concepto = tipo === 'gasto' ? 'Gasto' : 'Ingreso';
-
-const fecha = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+const fecha = (parsed.fecha && /^\d{4}-\d{2}-\d{2}$/.test(parsed.fecha)) ? parsed.fecha : new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
 const payload = { user_id: UID, tipo, concepto, monto, moneda: cuenta.moneda, cuenta_id: cuenta.id, status: 'Pagado', fecha };
 const H = { apikey: SR, Authorization: 'Bearer ' + SR, 'Content-Type': 'application/json' };
 await this.helpers.httpRequest({ method: 'POST', url: SUPA + '/movimientos', headers: { ...H, Prefer: 'return=minimal' }, body: payload, json: true });
@@ -68,9 +106,10 @@ const saldo = Array.isArray(saldoRes) && saldoRes[0] ? Number(saldoRes[0].saldo_
 
 const fmt = (n, c) => new Intl.NumberFormat(c === 'COP' ? 'es-CO' : 'en-US', { style: 'currency', currency: c, minimumFractionDigits: c === 'COP' ? 0 : 2 }).format(n);
 const emoji = tipo === 'gasto' ? '💸' : '💰';
-let msg = `${emoji} *${tipo === 'gasto' ? 'Gasto' : 'Ingreso'} registrado*\n\n*${concepto}*\n${fmt(monto, cuenta.moneda)} · ${cuenta.nombre}`;
-if (saldo != null) msg += `\n\n💼 Nuevo saldo ${cuenta.nombre}: *${fmt(saldo, cuenta.moneda)}*`;
-return reply(msg);
+const lente = prep.hasPhoto ? '📸 (leído de la foto)\n' : '';
+let m = `${emoji} *${tipo === 'gasto' ? 'Gasto' : 'Ingreso'} registrado*\n${lente}\n*${concepto}*\n${fmt(monto, cuenta.moneda)} · ${cuenta.nombre} · ${fecha}`;
+if (saldo != null) m += `\n\n💼 Nuevo saldo ${cuenta.nombre}: *${fmt(saldo, cuenta.moneda)}*`;
+return reply(m);
 """.strip().replace('__SR__', SR).replace('__SUPA__', SUPA).replace('__UID__', UID)
 
 wf = {
@@ -78,23 +117,27 @@ wf = {
     'settings': {'executionOrder': 'v1'},
     'nodes': [
         {'id': 'trg', 'name': 'Recibir Telegram', 'type': 'n8n-nodes-base.telegramTrigger', 'typeVersion': 1.1,
-         'position': [112, 304], 'parameters': {'updates': ['message']}, 'credentials': TG},
-        {'id': 'cue', 'name': 'Cuentas', 'type': 'n8n-nodes-base.httpRequest', 'typeVersion': 4.4,
-         'position': [336, 304], 'parameters': {
-             'url': SUPA + '/cuentas?select=id,nombre,moneda&archivada=eq.false',
-             'sendHeaders': True,
-             'headerParameters': {'parameters': [{'name': 'apikey', 'value': SR}, {'name': 'Authorization', 'value': 'Bearer ' + SR}]},
-             'options': {}}},
-        {'id': 'prc', 'name': 'Procesar e insertar', 'type': 'n8n-nodes-base.code', 'typeVersion': 2,
-         'position': [560, 304], 'parameters': {'jsCode': procesar_code}},
+         'position': [112, 304], 'parameters': {'updates': ['message'], 'additionalFields': {'download': True, 'imageSize': 'large'}}, 'credentials': TG},
+        {'id': 'prep', 'name': 'Preparar', 'type': 'n8n-nodes-base.code', 'typeVersion': 2,
+         'position': [336, 304], 'parameters': {'jsCode': preparar_code}},
+        {'id': 'ia', 'name': 'OpenRouter (visión)', 'type': 'n8n-nodes-base.httpRequest', 'typeVersion': 4.2,
+         'position': [560, 304], 'parameters': {
+             'method': 'POST', 'url': 'https://openrouter.ai/api/v1/chat/completions',
+             'authentication': 'predefinedCredentialType', 'nodeCredentialType': 'openRouterApi',
+             'sendBody': True, 'specifyBody': 'json', 'jsonBody': '={{ $json.requestBody }}',
+             'options': {'response': {'response': {'responseFormat': 'json'}}, 'timeout': 60000}},
+         'credentials': OR_CRED},
+        {'id': 'ins', 'name': 'Insertar y responder', 'type': 'n8n-nodes-base.code', 'typeVersion': 2,
+         'position': [784, 304], 'parameters': {'jsCode': insertar_code}},
         {'id': 'rep', 'name': 'Responder Telegram', 'type': 'n8n-nodes-base.telegram', 'typeVersion': 1.2,
-         'position': [784, 304], 'parameters': {'chatId': '={{ $json.chatId }}', 'text': '={{ $json.message }}',
+         'position': [1008, 304], 'parameters': {'chatId': '={{ $json.chatId }}', 'text': '={{ $json.message }}',
              'additionalFields': {'parse_mode': 'Markdown'}}, 'credentials': TG},
     ],
     'connections': {
-        'Recibir Telegram': {'main': [[{'node': 'Cuentas', 'type': 'main', 'index': 0}]]},
-        'Cuentas': {'main': [[{'node': 'Procesar e insertar', 'type': 'main', 'index': 0}]]},
-        'Procesar e insertar': {'main': [[{'node': 'Responder Telegram', 'type': 'main', 'index': 0}]]},
+        'Recibir Telegram': {'main': [[{'node': 'Preparar', 'type': 'main', 'index': 0}]]},
+        'Preparar': {'main': [[{'node': 'OpenRouter (visión)', 'type': 'main', 'index': 0}]]},
+        'OpenRouter (visión)': {'main': [[{'node': 'Insertar y responder', 'type': 'main', 'index': 0}]]},
+        'Insertar y responder': {'main': [[{'node': 'Responder Telegram', 'type': 'main', 'index': 0}]]},
     },
 }
 
@@ -113,6 +156,7 @@ existing = {w['name']: w['id'] for w in (lst.get('data', []) if isinstance(lst, 
 wid = existing.get(wf['name'])
 if wid:
     st, res = api('PUT', f'/workflows/{wid}', wf); print(f'ACTUALIZADO -> {wid} ({st})')
+    if st != 200: print(res)
 else:
     st, res = api('POST', '/workflows', wf); wid = res.get('id') if isinstance(res, dict) else None; print(f'CREADO -> {wid} ({st})')
     if not wid: print(res)
