@@ -26,9 +26,14 @@ const cuentas = await this.helpers.httpRequest({ method: 'GET', url: SUPA + '/cu
 const nombres = (cuentas || []).map(c => `${c.nombre} (${c.moneda})`).join(', ');
 
 const system = `Eres un asistente que extrae UN movimiento financiero y devuelve SOLO JSON válido con las claves:
-{"tipo":"gasto"|"ingreso","monto":number,"concepto":"texto corto","cuenta":"el nombre que mejor coincida de esta lista o null","fecha":"YYYY-MM-DD o null"}.
+{"tipo":"gasto"|"ingreso","concepto":"texto corto","cuenta":"el nombre que mejor coincida de esta lista o null","fecha":"YYYY-MM-DD o null","total_cop":number|null,"total_usd":number|null,"monto":number}.
 Lista de cuentas: [${nombres}].
-Reglas: interpreta "50 mil"=50000, "50k"=50000, "1.5 millones"=1500000. Si es la imagen de un recibo/factura, extrae el TOTAL a pagar como monto y el comercio como concepto. Si no logras determinar el monto, pon monto:0.`;
+Reglas:
+- Si el recibo/imagen muestra el total en VARIAS monedas, devuelve cada total por separado: total_cop (pesos colombianos COP/$) y total_usd (dólares USD/US$). Si solo aparece una, deja la otra en null.
+- "monto" = el total más visible (fallback). Números sin símbolos ni separadores de miles.
+- Interpreta "50 mil"=50000, "50k"=50000, "1.5 millones"=1500000.
+- Para texto sin recibo, pon el valor en monto y deduce la moneda si la mencionan.
+- El comercio o descripción va en concepto. Si no determinas el monto, monto:0.`;
 
 let userContent;
 if (hasPhoto && item.binary) {
@@ -67,9 +72,26 @@ let parsed = {};
 try { parsed = JSON.parse($input.first().json.choices[0].message.content); } catch (e) {}
 
 let tipo = parsed.tipo === 'ingreso' ? 'ingreso' : 'gasto';
-let monto = Number(parsed.monto);
 let concepto = (parsed.concepto || '').trim();
 let cuentaName = parsed.cuenta;
+
+// Resolver cuenta PRIMERO (para saber la moneda y elegir el total correcto)
+let cuenta = null;
+if (cuentaName) {
+  const q = String(cuentaName).toLowerCase();
+  cuenta = cuentas.find(c => c.nombre.toLowerCase() === q) || cuentas.find(c => c.nombre.toLowerCase().includes(q) || q.includes(c.nombre.toLowerCase()));
+}
+if (!cuenta && rawText) cuenta = cuentas.find(c => rawText.includes(c.nombre.toLowerCase()));
+
+// Elegir el monto en la MONEDA de la cuenta (el recibo puede traer COP y USD)
+const totCop = Number(parsed.total_cop);
+const totUsd = Number(parsed.total_usd);
+let monto = NaN;
+if (cuenta) {
+  if (cuenta.moneda === 'USD' && totUsd > 0) monto = totUsd;
+  else if (cuenta.moneda === 'COP' && totCop > 0) monto = totCop;
+}
+if (!(monto > 0)) monto = Number(parsed.monto);  // fallback al total más visible
 
 // Fallback por regex sobre el texto si la IA no dio monto
 if (!(monto > 0) && rawText) {
@@ -84,14 +106,6 @@ if (!(monto > 0) && rawText) {
 if (!(monto > 0)) {
   return reply('🤔 No logré sacar el monto. Escríbelo claro, ej:\n_gasto 50 mil mercado Bancolombia_\no manda la foto del recibo donde se vea el total.');
 }
-
-// Resolver cuenta: por lo que dijo la IA o buscando en el texto
-let cuenta = null;
-if (cuentaName) {
-  const q = String(cuentaName).toLowerCase();
-  cuenta = cuentas.find(c => c.nombre.toLowerCase() === q) || cuentas.find(c => c.nombre.toLowerCase().includes(q) || q.includes(c.nombre.toLowerCase()));
-}
-if (!cuenta && rawText) cuenta = cuentas.find(c => rawText.includes(c.nombre.toLowerCase()));
 if (!cuenta) {
   return reply('🏦 Detecté ' + monto + ' pero no la cuenta. Dime de cuál:\n' + listaCuentas());
 }
