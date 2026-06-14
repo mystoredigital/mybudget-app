@@ -10,66 +10,66 @@ BASE = env('N8N_BASE_URL'); KEY = env('N8N_API_KEY'); SR = env('SUPABASE_SERVICE
 UID = '2600227a-e1d2-4995-aa23-0ec46958002a'
 SUPA = 'https://tdwfsftgcbktekgknduj.supabase.co/rest/v1'
 TG = {'telegramApi': {'id': 'SNuF3zPIkSDlK9RO', 'name': 'Telegram account'}}
-OPENAI = {'openAiApi': {'id': 'RQ5DZ90hgR4xqHtR', 'name': 'OpenAi account'}}
 
-prompt_code = r"""
-const text = ($('Recibir Telegram').first().json.message.text) || '';
-const cuentas = $input.all().map(i => i.json);
-const nombres = cuentas.map(c => `${c.nombre} (${c.moneda})`).join(', ');
-const system = `Eres un asistente que extrae UN movimiento financiero de un mensaje en español.
-Devuelve SOLO un JSON con estas claves:
-- tipo: "gasto" o "ingreso" (si no es claro, "gasto"; si el mensaje NO es un movimiento, null)
-- monto: número sin separadores. Interpreta "50 mil"=50000, "50k"=50000, "1.5 millones"=1500000.
-- concepto: texto corto de qué fue.
-- cuenta: el nombre que mejor coincida de esta lista: [${nombres}]. Si no se menciona, null.`;
-const body = {
-  model: 'gpt-4o-mini',
-  messages: [{ role: 'system', content: system }, { role: 'user', content: text }],
-  response_format: { type: 'json_object' },
-  temperature: 0,
-};
-return [{ json: { requestBody: JSON.stringify(body) } }];
-""".strip()
-
+# Parser + insert SIN IA (gratis, sin cuotas). Lee text o caption (fotos).
 procesar_code = r"""
 const SR = '__SR__';
 const SUPA = '__SUPA__';
 const UID = '__UID__';
-const chatId = $('Recibir Telegram').first().json.message.chat.id;
+const m = $('Recibir Telegram').first().json.message;
+const chatId = m.chat.id;
+const text = (m.text || m.caption || '').trim();
 const cuentas = $('Cuentas').all().map(i => i.json);
-const reply = (m) => [{ json: { chatId, message: m } }];
+const reply = (msg) => [{ json: { chatId, message: msg } }];
+const listaCuentas = () => cuentas.map(c => `• ${c.nombre} (${c.moneda})`).join('\n') || '(no tienes cuentas)';
 
-let parsed = {};
-try { parsed = JSON.parse($input.first().json.choices[0].message.content); } catch (e) {}
-
-const tipo = parsed.tipo === 'ingreso' ? 'ingreso' : 'gasto';
-const monto = Number(parsed.monto);
-if (!(monto > 0)) return reply('🤔 No entendí el monto.\nEj: _gasto 50 mil en mercado con Bancolombia_');
-
-let cuenta = null;
-if (parsed.cuenta) {
-  const q = String(parsed.cuenta).toLowerCase();
-  cuenta = cuentas.find(c => c.nombre.toLowerCase() === q)
-        || cuentas.find(c => c.nombre.toLowerCase().includes(q) || q.includes(c.nombre.toLowerCase()));
+if (!text) {
+  return reply('📸 Recibí tu mensaje pero sin texto. Escríbeme el movimiento, por ej.:\n_gasto 50 mil mercado Bancolombia_');
 }
+const low = text.toLowerCase();
+
+// tipo
+let tipo = 'gasto';
+if (/\b(ingreso|ingres|entr[oó]|recib|consign|abono|me pagaron)/.test(low)) tipo = 'ingreso';
+
+// monto (formato Colombia: punto = miles, coma = decimal; soporta mil/k/millones)
+const num = (t) => Number(String(t).replace(/\./g, '').replace(',', '.'));
+let monto = NaN;
+let mMill = low.match(/([\d.,]+)\s*(millones|mill[oó]n)/);
+let mMil = low.match(/([\d.,]+)\s*(mil|k)\b/);
+if (mMill) monto = num(mMill[1]) * 1000000;
+else if (mMil) monto = num(mMil[1]) * 1000;
+else { const mN = low.match(/\$?\s*([\d][\d.,]*)/); if (mN) monto = num(mN[1]); }
+if (!(monto > 0)) {
+  return reply('🤔 No vi el monto. Ej:\n_gasto 50 mil mercado Bancolombia_\no _ingreso 200000 comisión wallet usdt_');
+}
+
+// cuenta: la que aparezca mencionada
+let cuenta = cuentas.find(c => low.includes(c.nombre.toLowerCase()));
 if (!cuenta) {
-  const lista = cuentas.map(c => `• ${c.nombre} (${c.moneda})`).join('\n') || '(no tienes cuentas)';
-  return reply('🏦 ¿De qué cuenta salió/entró? No la identifiqué.\nTus cuentas:\n' + lista);
+  return reply('🏦 ¿De qué cuenta? Menciona una de las tuyas:\n' + listaCuentas());
 }
 
-const concepto = parsed.concepto || (tipo === 'gasto' ? 'Gasto' : 'Ingreso');
+// concepto: limpiar tipo, montos, nombre de cuenta y conectores
+let concepto = text
+  .replace(new RegExp(cuenta.nombre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), '')
+  .replace(/\b(gasto|ingreso|gast[ée]|pagu[ée]|compr[ée]|consign[ée]|recib[íi])\b/ig, '')
+  .replace(/\$?\s*[\d.,]+\s*(millones|mill[oó]n|mil|k)?/ig, '')
+  .replace(/\b(en|de|del|con|por|a la|al|para|la|el)\b/ig, ' ')
+  .replace(/\s+/g, ' ').trim();
+if (!concepto) concepto = tipo === 'gasto' ? 'Gasto' : 'Ingreso';
+
 const fecha = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
 const payload = { user_id: UID, tipo, concepto, monto, moneda: cuenta.moneda, cuenta_id: cuenta.id, status: 'Pagado', fecha };
-
 const H = { apikey: SR, Authorization: 'Bearer ' + SR, 'Content-Type': 'application/json' };
 await this.helpers.httpRequest({ method: 'POST', url: SUPA + '/movimientos', headers: { ...H, Prefer: 'return=minimal' }, body: payload, json: true });
 const saldoRes = await this.helpers.httpRequest({ method: 'GET', url: SUPA + '/cuentas_saldos?select=saldo_actual&id=eq.' + cuenta.id, headers: H, json: true });
 const saldo = Array.isArray(saldoRes) && saldoRes[0] ? Number(saldoRes[0].saldo_actual) : null;
 
-const fmt = (n, m) => new Intl.NumberFormat(m === 'COP' ? 'es-CO' : 'en-US', { style: 'currency', currency: m, minimumFractionDigits: m === 'COP' ? 0 : 2 }).format(n);
+const fmt = (n, c) => new Intl.NumberFormat(c === 'COP' ? 'es-CO' : 'en-US', { style: 'currency', currency: c, minimumFractionDigits: c === 'COP' ? 0 : 2 }).format(n);
 const emoji = tipo === 'gasto' ? '💸' : '💰';
 let msg = `${emoji} *${tipo === 'gasto' ? 'Gasto' : 'Ingreso'} registrado*\n\n*${concepto}*\n${fmt(monto, cuenta.moneda)} · ${cuenta.nombre}`;
-if (saldo != null) msg += `\n\n💼 Nuevo saldo: *${fmt(saldo, cuenta.moneda)}*`;
+if (saldo != null) msg += `\n\n💼 Nuevo saldo ${cuenta.nombre}: *${fmt(saldo, cuenta.moneda)}*`;
 return reply(msg);
 """.strip().replace('__SR__', SR).replace('__SUPA__', SUPA).replace('__UID__', UID)
 
@@ -85,26 +85,15 @@ wf = {
              'sendHeaders': True,
              'headerParameters': {'parameters': [{'name': 'apikey', 'value': SR}, {'name': 'Authorization', 'value': 'Bearer ' + SR}]},
              'options': {}}},
-        {'id': 'prm', 'name': 'Construir prompt', 'type': 'n8n-nodes-base.code', 'typeVersion': 2,
-         'position': [560, 304], 'parameters': {'jsCode': prompt_code}},
-        {'id': 'ia', 'name': 'OpenAI parse', 'type': 'n8n-nodes-base.httpRequest', 'typeVersion': 4.2,
-         'position': [784, 304], 'parameters': {
-             'method': 'POST', 'url': 'https://api.openai.com/v1/chat/completions',
-             'authentication': 'predefinedCredentialType', 'nodeCredentialType': 'openAiApi',
-             'sendBody': True, 'specifyBody': 'json', 'jsonBody': '={{ $json.requestBody }}',
-             'options': {'response': {'response': {'responseFormat': 'json'}}, 'timeout': 60000}},
-         'credentials': OPENAI},
         {'id': 'prc', 'name': 'Procesar e insertar', 'type': 'n8n-nodes-base.code', 'typeVersion': 2,
-         'position': [1008, 304], 'parameters': {'jsCode': procesar_code}},
+         'position': [560, 304], 'parameters': {'jsCode': procesar_code}},
         {'id': 'rep', 'name': 'Responder Telegram', 'type': 'n8n-nodes-base.telegram', 'typeVersion': 1.2,
-         'position': [1232, 304], 'parameters': {'chatId': '={{ $json.chatId }}', 'text': '={{ $json.message }}',
+         'position': [784, 304], 'parameters': {'chatId': '={{ $json.chatId }}', 'text': '={{ $json.message }}',
              'additionalFields': {'parse_mode': 'Markdown'}}, 'credentials': TG},
     ],
     'connections': {
         'Recibir Telegram': {'main': [[{'node': 'Cuentas', 'type': 'main', 'index': 0}]]},
-        'Cuentas': {'main': [[{'node': 'Construir prompt', 'type': 'main', 'index': 0}]]},
-        'Construir prompt': {'main': [[{'node': 'OpenAI parse', 'type': 'main', 'index': 0}]]},
-        'OpenAI parse': {'main': [[{'node': 'Procesar e insertar', 'type': 'main', 'index': 0}]]},
+        'Cuentas': {'main': [[{'node': 'Procesar e insertar', 'type': 'main', 'index': 0}]]},
         'Procesar e insertar': {'main': [[{'node': 'Responder Telegram', 'type': 'main', 'index': 0}]]},
     },
 }
