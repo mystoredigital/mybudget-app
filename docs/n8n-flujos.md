@@ -3,6 +3,14 @@
 La app expone los datos en Supabase; n8n corre los crones y notificaciones.
 Usar el **service_role key** en el nodo Supabase/HTTP (server-side, nunca en el front).
 
+> **Estado (2026-06-14): IMPLEMENTADO y activo** en `n8n.mystoredigital.cloud`.
+> - `MyBudget - Tasa de cambio diaria (USD/COP)` → id `tDL6fiznqRcYKM4Y` (cron 06:00).
+> - `MyBudget - Alerta de Servicios/Dominios (30/15/7)` → id `FGFLcLqj3fdYsYq2` (cron 08:00).
+> Reusan el bot de Telegram del flujo de pagos (cred `SNuF3zPIkSDlK9RO`, chat `523281213`).
+> Script reproducible: `scripts/n8n_create_flows.py` (idempotente, upsert por nombre).
+> Nota: la fuente del dólar se cambió de la TRM de datos.gov.co a **open.er-api.com**
+> (gratis, sin key, más estable). El valor es referencia; el usuario puede sobrescribir manual.
+
 ## 1. Tasa de cambio diaria (USD/COP)
 **Cron:** diario, ~6:00 COT.
 1. HTTP GET a la TRM oficial (gratis, sin key):
