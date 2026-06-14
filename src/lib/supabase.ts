@@ -112,6 +112,7 @@ export type PortfolioPeriod = {
   user_id: string;
   period_month: string; // ISO date (first of month)
   gross_income: number;
+  partner_percent: number; // v2: % del socio para este periodo (variable)
   currency: Currency;
   status: PortfolioPeriodStatus;
   notes: string | null;
@@ -248,3 +249,18 @@ export type Servicio = {
 
 // Fila de servicios_view (servicio + días para renovar)
 export type ServicioView = Servicio & { dias_para_renovar: number };
+
+// ── v2: Portafolio — líneas del periodo ──
+
+export type PortfolioPeriodItemTipo = 'ingreso' | 'gasto_compartido' | 'descuento_socio';
+
+export type PortfolioPeriodItem = {
+  id: string;
+  period_id: string;
+  user_id: string;
+  tipo: PortfolioPeriodItemTipo;
+  concepto: string;
+  monto: number;
+  fecha: string;
+  created_at: string;
+};
