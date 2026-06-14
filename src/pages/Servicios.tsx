@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase, Servicio, ServicioView } from '../lib/supabase';
 import { formatCurrency } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Globe, ExternalLink, Pencil, Receipt, AlertTriangle } from 'lucide-react';
+import { Plus, Globe, ExternalLink, Pencil, Receipt, AlertTriangle, LayoutGrid, Rows3 } from 'lucide-react';
 import { addMonths, addYears } from 'date-fns';
 import ServicioModal from '../components/ServicioModal';
 
@@ -28,6 +28,7 @@ export default function Servicios() {
     const [refreshKey, setRefreshKey] = useState(0);
     const [modalOpen, setModalOpen] = useState(false);
     const [toEdit, setToEdit] = useState<Servicio | null>(null);
+    const [vista, setVista] = useState<'grid' | 'lista'>('grid');
 
     useEffect(() => {
         async function fetchData() {
@@ -80,9 +81,19 @@ export default function Servicios() {
                     <h1 className="text-[32px] font-semibold text-zinc-900 tracking-tight leading-tight dark:text-white">Servicios</h1>
                     <p className="text-zinc-500 font-medium mt-1 dark:text-zinc-400">Dominios, hosting y suscripciones contratadas</p>
                 </div>
-                <button onClick={() => { setToEdit(null); setModalOpen(true); }} className="flex items-center gap-2 bg-teal-900 dark:bg-teal-700 text-white px-5 py-3 rounded-full font-bold shadow-md shadow-teal-900/20 hover:bg-teal-800 hover:-translate-y-0.5 transition-all text-sm">
-                    <Plus className="w-5 h-5" /> Nuevo Servicio
-                </button>
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full p-1">
+                        <button onClick={() => setVista('grid')} className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${vista === 'grid' ? 'bg-teal-600 text-white' : 'text-zinc-400 hover:text-zinc-700'}`} title="Grilla">
+                            <LayoutGrid className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setVista('lista')} className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${vista === 'lista' ? 'bg-teal-600 text-white' : 'text-zinc-400 hover:text-zinc-700'}`} title="Lista">
+                            <Rows3 className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <button onClick={() => { setToEdit(null); setModalOpen(true); }} className="flex items-center gap-2 bg-teal-900 dark:bg-teal-700 text-white px-5 py-3 rounded-full font-bold shadow-md shadow-teal-900/20 hover:bg-teal-800 hover:-translate-y-0.5 transition-all text-sm">
+                        <Plus className="w-5 h-5" /> Nuevo Servicio
+                    </button>
+                </div>
             </div>
 
             {proximos.length > 0 && (
@@ -101,7 +112,7 @@ export default function Servicios() {
                     <Globe className="w-10 h-10 text-zinc-300 mx-auto mb-3" />
                     <p className="text-zinc-500 font-medium">Aún no tienes servicios. Agrega tu primer dominio o suscripción.</p>
                 </div>
-            ) : (
+            ) : vista === 'grid' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {servicios.map(s => {
                         const sem = semaforo(s.dias_para_renovar);
@@ -134,6 +145,27 @@ export default function Servicios() {
                                 <button onClick={() => generarPago(s)} className="mt-1 flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-zinc-900 dark:bg-teal-700 text-white text-sm font-bold hover:bg-zinc-800 dark:hover:bg-teal-600 transition-colors">
                                     <Receipt className="w-4 h-4" /> Generar pago
                                 </button>
+                            </div>
+                        );
+                    })}
+                </div>
+            ) : (
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 shadow-sm divide-y divide-zinc-50 dark:divide-zinc-800/50 overflow-hidden">
+                    {servicios.map(s => {
+                        const sem = semaforo(s.dias_para_renovar);
+                        return (
+                            <div key={s.id} className="flex items-center gap-3 px-4 sm:px-5 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group">
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-zinc-900 dark:text-white text-sm truncate">{s.nombre}</p>
+                                    <p className="text-[11px] text-zinc-400 font-semibold truncate">{s.categoria}{s.proveedor ? ` · ${s.proveedor}` : ''}{s.cliente ? ` · ${s.cliente}` : ''}</p>
+                                </div>
+                                <span className={`hidden sm:inline-block text-[11px] font-bold px-2.5 py-1 rounded-full shrink-0 ${sem.cls}`}>{sem.label}</span>
+                                <span className="font-bold text-zinc-900 dark:text-white text-sm w-24 text-right shrink-0">{formatCurrency(s.costo, s.moneda)}</span>
+                                {s.url_panel && (
+                                    <a href={s.url_panel} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 shrink-0" title="Abrir panel"><ExternalLink className="w-4 h-4" /></a>
+                                )}
+                                <button onClick={() => generarPago(s)} className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 dark:bg-teal-700 text-white text-xs font-bold hover:bg-zinc-800 shrink-0" title="Generar pago"><Receipt className="w-3.5 h-3.5" /> Pago</button>
+                                <button onClick={() => { setToEdit(s); setModalOpen(true); }} className="text-zinc-300 hover:text-teal-600 transition-colors shrink-0"><Pencil className="w-4 h-4" /></button>
                             </div>
                         );
                     })}
