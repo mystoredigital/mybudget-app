@@ -244,8 +244,8 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
     };
 
     return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 pb-24 md:pb-4 overflow-y-auto">
+            <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl max-h-[88dvh] md:max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
 
                 {/* Header */}
                 <div className="flex items-center justify-between px-8 py-6 border-b border-zinc-100">

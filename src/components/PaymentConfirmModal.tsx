@@ -320,8 +320,8 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
     };
 
     return (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 pb-24 md:pb-4 overflow-y-auto">
+            <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[88dvh] md:max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
 
                 {/* Header */}
                 <div className="flex items-center justify-between px-8 py-6 border-b border-zinc-100 bg-teal-50/50">
@@ -447,7 +447,7 @@ export default function PaymentConfirmModal({ expense, onClose, onSuccess }: Pay
                 </div>
 
                 {/* Footer */}
-                <div className="bg-zinc-50 border-t border-zinc-100 p-6 px-8 flex flex-col gap-3 shrink-0">
+                <div className="bg-zinc-50 border-t border-zinc-100 p-6 px-8 pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-col gap-3 shrink-0">
                     {/* Overdue button - only shown when payment is overdue */}
                     {isOverdue && (
                         <button

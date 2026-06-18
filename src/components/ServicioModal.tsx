@@ -106,8 +106,8 @@ export default function ServicioModal({ isOpen, onClose, onSuccess, servicioToEd
     };
 
     return (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 pb-24 md:pb-4 overflow-y-auto">
+            <div className="bg-white dark:bg-zinc-900 rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[88dvh] md:max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-between px-8 py-6 border-b border-zinc-100 dark:border-zinc-800 bg-teal-50/50 dark:bg-zinc-800/50">
                     <div>
                         <h2 className="text-xl font-bold text-teal-900 dark:text-teal-300">{servicioToEdit ? 'Editar Servicio' : 'Nuevo Servicio'}</h2>

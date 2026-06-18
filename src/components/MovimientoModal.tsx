@@ -149,8 +149,8 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
     const activeBtn = TIPOS.find(t => t.value === tipo)!.btn;
 
     return (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 pb-24 md:pb-4 overflow-y-auto">
+            <div className="bg-white dark:bg-zinc-900 rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[88dvh] md:max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-between px-8 py-6 border-b border-zinc-100 dark:border-zinc-800">
                     <h2 className="text-xl font-bold text-zinc-900 dark:text-white">{movToEdit ? 'Editar Movimiento' : 'Nuevo Movimiento'}</h2>
                     <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-300 transition-colors">
