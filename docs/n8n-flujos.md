@@ -47,3 +47,27 @@ Pendiente e avanzar la fecha (misma lógica que el botón "Generar pago" de la a
 
 > Hoy el usuario puede generar el pago manualmente desde la pantalla Servicios;
 > este flujo solo lo automatiza.
+
+## 5. Registrar movimiento por Telegram (bot principal)
+Bot `SNuF3zPIkSDlK9RO` (chat `523281213`). Telegram → Code (foto→visión OpenRouter
+o texto) → inserta en `movimientos` y responde con el nuevo saldo.
+Script: `scripts/n8n_telegram_movimiento.py` (workflow `ZHNinNenvTV3RWwv`).
+
+## 6. Reporte diario de saldos por Telegram (bot dedicado)
+**Bot nuevo `@reportdiariobot`** (credencial `PubvccixpMzjA2DR`), workflow
+`MyBudget - Reporte diario por Telegram` → id `J3EOCDHg76fOz2zZ` (activo).
+Script: `scripts/n8n_telegram_reporte.py` (token en `.env` → `TG_REPORTE_BOT_TOKEN`).
+
+Flujo: Telegram Trigger → Code → Responder.
+1. Lee el texto del mensaje (el reporte que manda el asistente).
+2. Trae `reporte_conceptos` (activos) del usuario y, por cada concepto, busca en el
+   texto la línea con su palabra distintiva (lirio, forus, credil, rds, doradobet,
+   bybit, pendientes…) y extrae el monto. Parser tolera formato `95.653,08` y `14.600$`.
+3. Upsert de `reportes_diarios` (único por `user_id,fecha`, fecha America/Bogota) y
+   reemplaza los `reporte_items` del día (cada uno con su signo).
+4. Responde con el desglose y el **TOTAL** = Σ(signo × monto). Avisa los conceptos
+   sin dato (quedan en 0).
+
+> Es un bot SEPARADO del de movimientos (un bot Telegram = un webhook). Para que el
+> bot reconozca conceptos, primero hay que abrir la app → Reporte diario una vez
+> (siembra los 8 conceptos por defecto), o crearlos ahí.
