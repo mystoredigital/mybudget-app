@@ -117,6 +117,11 @@ export type PortfolioPeriod = {
   status: PortfolioPeriodStatus;
   notes: string | null;
   closed_at: string | null;
+  // v2: pago de liquidación al socio
+  pago_socio_estado: 'Pendiente' | 'Pagado';
+  pago_socio_fecha: string | null;
+  pago_socio_monto: number | null;
+  pago_socio_comprobante_path: string | null;
   created_at: string;
   updated_at: string;
 };

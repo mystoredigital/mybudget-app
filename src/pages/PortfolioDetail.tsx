@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Pencil, Plus, Trash2, TrendingUp, TrendingDown, Users, Wallet } from 'lucide-react';
+import { ArrowLeft, Pencil, Plus, Trash2, TrendingUp, TrendingDown, Users, Wallet, CheckCircle2, Clock } from 'lucide-react';
 import {
     supabase, UserPortfolio, PortfolioPartner, PortfolioPeriod,
     PortfolioPeriodItem, PortfolioPeriodItemTipo,
@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../lib/utils';
 import PortfolioModal from '../components/PortfolioModal';
+import PagoSocioModal from '../components/PagoSocioModal';
 
 const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const fmtMonth = (iso: string) => { const d = new Date(iso + 'T12:00:00'); return `${monthNames[d.getMonth()]} ${d.getFullYear()}`; };
@@ -29,6 +30,7 @@ export default function PortfolioDetail() {
     const [selectedId, setSelectedId] = useState<string>('');
     const [items, setItems] = useState<PortfolioPeriodItem[]>([]);
     const [editOpen, setEditOpen] = useState(false);
+    const [pagoOpen, setPagoOpen] = useState(false);
     const [partnerName, setPartnerName] = useState('');
 
     const cur = portfolio?.default_currency || 'USD';
@@ -52,6 +54,12 @@ export default function PortfolioDetail() {
         setPeriods(peData);
         setSelectedId(prev => prev && peData.some(x => x.id === prev) ? prev : (peData[0]?.id || ''));
         setLoading(false);
+    }
+
+    async function loadPeriodsKeepSelection() {
+        if (!id) return;
+        const { data } = await supabase.from('portfolio_periods').select('*').eq('portfolio_id', id).order('period_month', { ascending: false });
+        if (data) setPeriods(data as PortfolioPeriod[]);
     }
 
     async function loadItems(periodId: string) {
@@ -119,6 +127,7 @@ export default function PortfolioDetail() {
     const parteSocio = neto * (pct / 100);
     const miParte = neto - parteSocio;
     const leDebo = parteSocio - descuentos;
+    const pagado = selected?.pago_socio_estado === 'Pagado';
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
@@ -164,7 +173,7 @@ export default function PortfolioDetail() {
                             </div>
                         </div>
                         {/* Socio */}
-                        <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-100 dark:border-zinc-800">
+                        <div className={`rounded-2xl p-6 border flex flex-col ${pagado ? 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-900/40' : 'bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800'}`}>
                             <div className="flex items-center justify-between">
                                 <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Le debo al socio</span>
                                 <div className="flex items-center gap-1">
@@ -172,10 +181,30 @@ export default function PortfolioDetail() {
                                     <span className="text-zinc-400 font-bold text-sm">%</span>
                                 </div>
                             </div>
-                            <p className="text-3xl font-extrabold text-teal-700 dark:text-teal-400 mt-1">{formatCurrency(leDebo, cur)}</p>
+                            <p className={`text-3xl font-extrabold mt-1 ${pagado ? 'text-emerald-600 dark:text-emerald-400' : 'text-teal-700 dark:text-teal-400'}`}>{formatCurrency(leDebo, cur)}</p>
                             <div className="text-xs text-zinc-400 font-medium mt-2 space-y-0.5">
                                 <p>Parte del socio: {formatCurrency(parteSocio, cur)}</p>
                                 <p>− Descuentos: {formatCurrency(descuentos, cur)}</p>
+                            </div>
+
+                            {/* Estado del pago al socio */}
+                            <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                                {pagado ? (
+                                    <button onClick={() => setPagoOpen(true)} className="w-full flex items-center gap-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-4 py-2.5 font-bold text-sm hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors">
+                                        <CheckCircle2 className="w-5 h-5 shrink-0" />
+                                        <span className="flex-1 text-left">
+                                            Pagado{selected.pago_socio_fecha ? ` · ${selected.pago_socio_fecha}` : ''}
+                                            {selected.pago_socio_monto != null && Math.abs(Number(selected.pago_socio_monto) - leDebo) > 0.01 && (
+                                                <span className="block text-[11px] font-medium text-emerald-600/80 dark:text-emerald-400/70">Entregado: {formatCurrency(Number(selected.pago_socio_monto), cur)}</span>
+                                            )}
+                                        </span>
+                                        <Pencil className="w-3.5 h-3.5 opacity-60" />
+                                    </button>
+                                ) : (
+                                    <button onClick={() => setPagoOpen(true)} className="w-full flex items-center justify-center gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 font-bold text-sm shadow-md shadow-orange-500/20 transition-colors">
+                                        <Clock className="w-4 h-4" /> Pendiente · Marcar pagado
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -196,6 +225,16 @@ export default function PortfolioDetail() {
                         ))}
                     </div>
                 </>
+            )}
+
+            {pagoOpen && (
+                <PagoSocioModal
+                    period={selected}
+                    leDebo={leDebo}
+                    socioName={partner?.name || partnerName}
+                    onClose={() => setPagoOpen(false)}
+                    onSuccess={() => { if (selectedId) loadPeriodsKeepSelection(); }}
+                />
             )}
 
             <PortfolioModal isOpen={editOpen} portfolioToEdit={portfolio} onClose={() => setEditOpen(false)}
