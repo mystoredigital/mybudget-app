@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Pencil, Plus, Trash2, TrendingUp, TrendingDown, Users, Wallet, CheckCircle2, Clock } from 'lucide-react';
+import { ArrowLeft, Pencil, Plus, Trash2, TrendingUp, TrendingDown, Users, Wallet, CheckCircle2, Clock, PlusCircle } from 'lucide-react';
 import {
     supabase, UserPortfolio, PortfolioPartner, PortfolioPeriod,
     PortfolioPeriodItem, PortfolioPeriodItemTipo,
@@ -16,6 +16,7 @@ const fmtMonth = (iso: string) => { const d = new Date(iso + 'T12:00:00'); retur
 const SECCIONES: { tipo: PortfolioPeriodItemTipo; titulo: string; hint: string }[] = [
     { tipo: 'ingreso', titulo: 'Comisión / Ingresos', hint: 'Lo que entró este mes' },
     { tipo: 'gasto_compartido', titulo: 'Gastos compartidos', hint: 'Se restan antes de repartir' },
+    { tipo: 'cargo_socio', titulo: 'Pendientes al socio', hint: 'Se le suman a su parte (otros meses)' },
     { tipo: 'descuento_socio', titulo: 'Descuentos al socio', hint: 'Pagos/gastos que le bajan a su parte' },
 ];
 
@@ -122,11 +123,12 @@ export default function PortfolioDetail() {
     const ingresos = sum('ingreso');
     const gastosComp = sum('gasto_compartido');
     const descuentos = sum('descuento_socio');
+    const cargos = sum('cargo_socio');
     const neto = ingresos - gastosComp;
     const pct = selected?.partner_percent ?? 50;
     const parteSocio = neto * (pct / 100);
     const miParte = neto - parteSocio;
-    const leDebo = parteSocio - descuentos;
+    const leDebo = parteSocio + cargos - descuentos;
     const pagado = selected?.pago_socio_estado === 'Pagado';
 
     return (
@@ -184,6 +186,7 @@ export default function PortfolioDetail() {
                             <p className={`text-3xl font-extrabold mt-1 ${pagado ? 'text-emerald-600 dark:text-emerald-400' : 'text-teal-700 dark:text-teal-400'}`}>{formatCurrency(leDebo, cur)}</p>
                             <div className="text-xs text-zinc-400 font-medium mt-2 space-y-0.5">
                                 <p>Parte del socio: {formatCurrency(parteSocio, cur)}</p>
+                                {cargos > 0 && <p>+ Pendientes: {formatCurrency(cargos, cur)}</p>}
                                 <p>− Descuentos: {formatCurrency(descuentos, cur)}</p>
                             </div>
 
@@ -210,7 +213,7 @@ export default function PortfolioDetail() {
                     </div>
 
                     {/* Secciones de items */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                         {SECCIONES.map(sec => (
                             <ItemSection
                                 key={sec.tipo}
@@ -261,7 +264,14 @@ const ItemSection: React.FC<ItemSectionProps> = ({ titulo, hint, tipo, cur, item
     const [monto, setMonto] = useState('');
     const total = items.reduce((a, c) => a + Number(c.monto), 0);
     const isIngreso = tipo === 'ingreso';
-    const Icon = isIngreso ? TrendingUp : tipo === 'descuento_socio' ? Wallet : TrendingDown;
+    const Icon = isIngreso ? TrendingUp
+        : tipo === 'descuento_socio' ? Wallet
+        : tipo === 'cargo_socio' ? PlusCircle
+        : TrendingDown;
+    const iconColor = isIngreso ? 'text-emerald-500'
+        : tipo === 'descuento_socio' ? 'text-blue-500'
+        : tipo === 'cargo_socio' ? 'text-amber-500'
+        : 'text-rose-500';
 
     const add = () => {
         const m = Number(monto);
@@ -275,7 +285,7 @@ const ItemSection: React.FC<ItemSectionProps> = ({ titulo, hint, tipo, cur, item
             <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <Icon className={`w-4 h-4 ${isIngreso ? 'text-emerald-500' : tipo === 'descuento_socio' ? 'text-blue-500' : 'text-rose-500'}`} />
+                        <Icon className={`w-4 h-4 ${iconColor}`} />
                         <h3 className="font-bold text-zinc-900 dark:text-white text-sm">{titulo}</h3>
                     </div>
                     <span className="font-bold text-sm text-zinc-700 dark:text-zinc-200">{formatCurrency(total, cur)}</span>

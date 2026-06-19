@@ -257,7 +257,7 @@ export type ServicioView = Servicio & { dias_para_renovar: number };
 
 // ── v2: Portafolio — líneas del periodo ──
 
-export type PortfolioPeriodItemTipo = 'ingreso' | 'gasto_compartido' | 'descuento_socio';
+export type PortfolioPeriodItemTipo = 'ingreso' | 'gasto_compartido' | 'descuento_socio' | 'cargo_socio';
 
 export type PortfolioPeriodItem = {
   id: string;
