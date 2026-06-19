@@ -27,6 +27,7 @@ export default function PortfoliosList() {
     const [editing, setEditing] = useState<UserPortfolio | null>(null);
     const [consolidado, setConsolidado] = useState<Consolidado[]>([]);
     const [checked, setChecked] = useState<Set<string>>(new Set());
+    const [gastosPorPortafolio, setGastosPorPortafolio] = useState<Record<string, { count: number; totals: Partial<Record<Currency, number>> }>>({});
 
     useEffect(() => {
         if (user) load();
@@ -43,9 +44,28 @@ export default function PortfoliosList() {
             .order('name');
         if (!error && data) {
             setPortfolios(data);
-            await loadConsolidado(data as UserPortfolio[]);
+            await Promise.all([
+                loadConsolidado(data as UserPortfolio[]),
+                loadGastosSimples(),
+            ]);
         }
         setLoading(false);
+    }
+
+    async function loadGastosSimples() {
+        if (!user) return;
+        const { data } = await supabase
+            .from('expenses')
+            .select('valor, moneda, portafolio')
+            .eq('user_id', user.id);
+        const map: Record<string, { count: number; totals: Partial<Record<Currency, number>> }> = {};
+        for (const e of (data as { valor: number; moneda: Currency; portafolio: string | null }[]) || []) {
+            const key = e.portafolio || 'Personal';
+            if (!map[key]) map[key] = { count: 0, totals: {} };
+            map[key].count += 1;
+            map[key].totals[e.moneda] = (map[key].totals[e.moneda] || 0) + Number(e.valor || 0);
+        }
+        setGastosPorPortafolio(map);
     }
 
     async function loadConsolidado(all: UserPortfolio[]) {
@@ -246,7 +266,7 @@ export default function PortfoliosList() {
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {simple.map(p => (
-                                    <PortfolioCard key={p.id} p={p} onOpen={() => { setEditing(p); setModalOpen(true); }} onEdit={() => { setEditing(p); setModalOpen(true); }} simple />
+                                    <PortfolioCard key={p.id} p={p} onOpen={() => { setEditing(p); setModalOpen(true); }} onEdit={() => { setEditing(p); setModalOpen(true); }} simple gastos={gastosPorPortafolio[p.name]} />
                                 ))}
                             </div>
                         </section>
@@ -264,9 +284,13 @@ export default function PortfoliosList() {
     );
 }
 
-type CardProps = { p: UserPortfolio; onOpen: () => void; onEdit: () => void; simple?: boolean };
+type CardProps = {
+    p: UserPortfolio; onOpen: () => void; onEdit: () => void; simple?: boolean;
+    gastos?: { count: number; totals: Partial<Record<Currency, number>> };
+};
 
-const PortfolioCard: React.FC<CardProps> = ({ p, onOpen, onEdit, simple }) => {
+const PortfolioCard: React.FC<CardProps> = ({ p, onOpen, onEdit, simple, gastos }) => {
+    const monedas = gastos ? (Object.keys(gastos.totals) as Currency[]) : [];
     return (
         <div className="bg-white dark:bg-zinc-900 rounded-[28px] p-6 border border-zinc-100 dark:border-zinc-800 shadow-sm hover:shadow-md transition-all group cursor-pointer relative" onClick={onOpen}>
             <button
@@ -283,6 +307,22 @@ const PortfolioCard: React.FC<CardProps> = ({ p, onOpen, onEdit, simple }) => {
             <p className="text-xs uppercase tracking-wide font-semibold text-zinc-400 dark:text-zinc-500 mt-1">{p.type === 'shared' ? 'Compartido' : 'Simple'} · {p.default_currency}</p>
             {p.description && (
                 <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-3 line-clamp-3 leading-relaxed">{p.description}</p>
+            )}
+            {simple && (
+                <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                    {monedas.length === 0 ? (
+                        <p className="text-sm text-zinc-400 dark:text-zinc-500 font-medium">Sin gastos aún</p>
+                    ) : (
+                        <>
+                            <p className="text-[11px] uppercase tracking-wide font-semibold text-zinc-400 dark:text-zinc-500">Gastos acumulados ({gastos!.count})</p>
+                            <div className="mt-1 space-y-0.5">
+                                {monedas.map(m => (
+                                    <p key={m} className="text-lg font-extrabold text-zinc-900 dark:text-white tabular-nums">{formatCurrency(gastos!.totals[m]!, m)}</p>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
             )}
         </div>
     );
