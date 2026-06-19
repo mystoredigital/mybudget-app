@@ -1,9 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Briefcase, Users, Tag, Pencil } from 'lucide-react';
-import { supabase, UserPortfolio } from '../lib/supabase';
+import { Plus, Briefcase, Users, Tag, Pencil, Check, CheckCircle2, Clock, HandCoins } from 'lucide-react';
+import { supabase, UserPortfolio, PortfolioPeriod, PortfolioPeriodItem, Currency } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { formatCurrency } from '../lib/utils';
 import PortfolioModal from '../components/PortfolioModal';
+
+const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const fmtMonth = (iso: string) => { const d = new Date(iso + 'T12:00:00'); return `${monthNames[d.getMonth()]} ${d.getFullYear()}`; };
+
+type Consolidado = {
+    portfolioId: string;
+    name: string;
+    mes: string | null;       // period_month ISO
+    leDebo: number;
+    estado: 'Pendiente' | 'Pagado';
+    currency: Currency;
+};
 
 export default function PortfoliosList() {
     const { user } = useAuth();
@@ -12,6 +25,8 @@ export default function PortfoliosList() {
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState<UserPortfolio | null>(null);
+    const [consolidado, setConsolidado] = useState<Consolidado[]>([]);
+    const [checked, setChecked] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         if (user) load();
@@ -26,12 +41,80 @@ export default function PortfoliosList() {
             .eq('user_id', user.id)
             .order('type', { ascending: false }) // shared antes que simple
             .order('name');
-        if (!error && data) setPortfolios(data);
+        if (!error && data) {
+            setPortfolios(data);
+            await loadConsolidado(data as UserPortfolio[]);
+        }
         setLoading(false);
     }
 
+    async function loadConsolidado(all: UserPortfolio[]) {
+        if (!user) return;
+        const sharedList = all.filter(p => p.type === 'shared');
+        if (sharedList.length === 0) { setConsolidado([]); return; }
+
+        // Último periodo (mes) de cada portafolio compartido
+        const { data: periods } = await supabase
+            .from('portfolio_periods')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('period_month', { ascending: false });
+
+        const latestByPortfolio = new Map<string, PortfolioPeriod>();
+        for (const p of (periods as PortfolioPeriod[]) || []) {
+            if (!latestByPortfolio.has(p.portfolio_id)) latestByPortfolio.set(p.portfolio_id, p);
+        }
+
+        const periodIds = [...latestByPortfolio.values()].map(p => p.id);
+        let itemsByPeriod = new Map<string, PortfolioPeriodItem[]>();
+        if (periodIds.length) {
+            const { data: items } = await supabase
+                .from('portfolio_period_items')
+                .select('*')
+                .in('period_id', periodIds);
+            for (const it of (items as PortfolioPeriodItem[]) || []) {
+                const arr = itemsByPeriod.get(it.period_id) || [];
+                arr.push(it);
+                itemsByPeriod.set(it.period_id, arr);
+            }
+        }
+
+        const rows: Consolidado[] = sharedList.map(p => {
+            const per = latestByPortfolio.get(p.id) || null;
+            const items = per ? (itemsByPeriod.get(per.id) || []) : [];
+            const sum = (t: string) => items.filter(i => i.tipo === t).reduce((a, c) => a + Number(c.monto), 0);
+            const neto = sum('ingreso') - sum('gasto_compartido');
+            const pct = per?.partner_percent ?? 50;
+            const leDebo = neto * (pct / 100) + sum('cargo_socio') - sum('descuento_socio');
+            return {
+                portfolioId: p.id,
+                name: p.name,
+                mes: per?.period_month || null,
+                leDebo: per ? leDebo : 0,
+                estado: (per?.pago_socio_estado as 'Pendiente' | 'Pagado') || 'Pendiente',
+                currency: p.default_currency,
+            };
+        });
+
+        setConsolidado(rows);
+        // Por defecto marca los que tienen un saldo pendiente (>0 y sin pagar)
+        setChecked(new Set(rows.filter(r => r.mes && r.leDebo > 0 && r.estado !== 'Pagado').map(r => r.portfolioId)));
+    }
+
+    const toggleCheck = (id: string) => setChecked(prev => {
+        const next = new Set(prev);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return next;
+    });
+
     const shared = portfolios.filter(p => p.type === 'shared');
     const simple = portfolios.filter(p => p.type === 'simple');
+
+    const seleccionados = consolidado.filter(r => checked.has(r.portfolioId));
+    const totalSeleccionado = seleccionados.reduce((a, r) => a + r.leDebo, 0);
+    const monedasSel = new Set(seleccionados.map(r => r.currency));
+    const monedaTotal: Currency = monedasSel.size === 1 ? (Array.from(monedasSel)[0] as Currency) : 'USD';
+    const monedasMixtas = monedasSel.size > 1;
 
     return (
         <div className="space-y-8 animate-in fade-in duration-300">
@@ -52,6 +135,77 @@ export default function PortfoliosList() {
                     <Plus className="w-5 h-5" /> Nuevo Portafolio
                 </button>
             </div>
+
+            {/* Consolidado — Le debo a socios */}
+            {!loading && consolidado.length > 0 && (
+                <div className="bg-white dark:bg-zinc-900 rounded-[28px] border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden">
+                    <div className="flex items-center gap-2 px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
+                        <HandCoins className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                        <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Le debo a socios</h2>
+                        <span className="text-xs text-zinc-400 dark:text-zinc-500 font-medium hidden sm:inline">— marca los que quieras sumar</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[560px] text-sm">
+                            <thead>
+                                <tr className="text-left text-[11px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 border-b border-zinc-50 dark:border-zinc-800/60">
+                                    <th className="w-12 py-3 pl-6"></th>
+                                    <th className="py-3 font-bold">Portafolio</th>
+                                    <th className="py-3 font-bold">Mes</th>
+                                    <th className="py-3 font-bold">Estado</th>
+                                    <th className="py-3 pr-6 font-bold text-right">Le debo</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/60">
+                                {consolidado.map(r => {
+                                    const isChecked = checked.has(r.portfolioId);
+                                    const pagado = r.estado === 'Pagado';
+                                    return (
+                                        <tr
+                                            key={r.portfolioId}
+                                            onClick={() => toggleCheck(r.portfolioId)}
+                                            className={`cursor-pointer transition-colors ${isChecked ? 'bg-teal-50/50 dark:bg-teal-900/10' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'}`}
+                                        >
+                                            <td className="py-3 pl-6">
+                                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${isChecked ? 'bg-teal-600 border-teal-600 text-white' : 'border-zinc-300 dark:border-zinc-600'}`}>
+                                                    {isChecked && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+                                                </div>
+                                            </td>
+                                            <td className="py-3 font-bold text-zinc-900 dark:text-white">{r.name}</td>
+                                            <td className="py-3 text-zinc-500 dark:text-zinc-400">{r.mes ? fmtMonth(r.mes) : '—'}</td>
+                                            <td className="py-3">
+                                                {!r.mes ? (
+                                                    <span className="text-zinc-400 text-xs">sin mes</span>
+                                                ) : pagado ? (
+                                                    <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold text-xs"><CheckCircle2 className="w-3.5 h-3.5" /> Pagado</span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 text-orange-600 dark:text-orange-400 font-semibold text-xs"><Clock className="w-3.5 h-3.5" /> Pendiente</span>
+                                                )}
+                                            </td>
+                                            <td className={`py-3 pr-6 text-right font-bold tabular-nums ${pagado ? 'text-zinc-400 line-through' : 'text-zinc-900 dark:text-white'}`}>
+                                                {formatCurrency(r.leDebo, r.currency)}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                            <tfoot>
+                                <tr className="border-t-2 border-zinc-100 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/30">
+                                    <td className="py-4 pl-6" colSpan={2}>
+                                        <span className="font-bold text-zinc-900 dark:text-white">Total seleccionado</span>
+                                        <span className="text-zinc-400 font-medium text-xs ml-2">({seleccionados.length})</span>
+                                    </td>
+                                    <td colSpan={2} className="py-4 text-xs text-zinc-400">
+                                        {monedasMixtas && <span className="text-orange-500 font-semibold">Monedas mixtas — total en {monedaTotal}</span>}
+                                    </td>
+                                    <td className="py-4 pr-6 text-right text-lg font-extrabold text-teal-700 dark:text-teal-400 tabular-nums">
+                                        {formatCurrency(totalSeleccionado, monedaTotal)}
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            )}
 
             {loading ? (
                 <p className="text-zinc-500 dark:text-zinc-400">Cargando...</p>
