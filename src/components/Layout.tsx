@@ -13,7 +13,8 @@ import {
   Coffee,
   CircleDashed,
   Wallet,
-  Globe
+  Globe,
+  ClipboardList
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -33,6 +34,7 @@ export default function Layout() {
       items: [
         { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
         { to: '/cuentas', icon: Wallet, label: 'Cuentas' },
+        { to: '/reporte-diario', icon: ClipboardList, label: 'Reporte diario' },
         { to: '/servicios', icon: Globe, label: 'Servicios' },
         { to: '/portfolios', icon: Briefcase, label: 'Portafolios' },
       ],
@@ -57,6 +59,7 @@ export default function Layout() {
   const mobileNav = [
     { to: '/', icon: LayoutDashboard, label: 'Inicio' },
     { to: '/cuentas', icon: Wallet, label: 'Cuentas' },
+    { to: '/reporte-diario', icon: ClipboardList, label: 'Reporte' },
     { to: '/servicios', icon: Globe, label: 'Servicios' },
     { to: '/portfolios', icon: Briefcase, label: 'Socios' },
     { to: '/settings', icon: Settings, label: 'Ajustes' },

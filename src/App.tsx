@@ -16,6 +16,7 @@ import PortfoliosList from './pages/PortfoliosList';
 import PortfolioDetail from './pages/PortfolioDetail';
 import Cuentas from './pages/Cuentas';
 import Servicios from './pages/Servicios';
+import ReporteDiario from './pages/ReporteDiario';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
@@ -47,6 +48,7 @@ export default function App() {
               <Route index element={<Dashboard />} />
               <Route path="cuentas" element={<Cuentas />} />
               <Route path="servicios" element={<Servicios />} />
+              <Route path="reporte-diario" element={<ReporteDiario />} />
               <Route path="expenses" element={<ExpensesTable />} />
               <Route path="expenses/estado" element={<ExpensesByStatus />} />
               <Route path="expenses/categoria" element={<ExpensesByCategory />} />

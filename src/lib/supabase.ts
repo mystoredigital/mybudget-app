@@ -269,3 +269,37 @@ export type PortfolioPeriodItem = {
   fecha: string;
   created_at: string;
 };
+
+// ── v2: Reporte diario de saldos ──
+
+export type ReporteConcepto = {
+  id: string;
+  user_id: string;
+  nombre: string;
+  signo: -1 | 1;
+  orden: number;
+  activo: boolean;
+  created_at: string;
+};
+
+export type ReporteDiario = {
+  id: string;
+  user_id: string;
+  fecha: string;
+  moneda: Currency;
+  notas: string | null;
+  raw_text: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReporteItem = {
+  id: string;
+  reporte_id: string;
+  user_id: string;
+  nombre: string;
+  signo: -1 | 1;
+  monto: number;
+  orden: number;
+  created_at: string;
+};
