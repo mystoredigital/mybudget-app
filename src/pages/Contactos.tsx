@@ -11,6 +11,7 @@ export default function Contactos() {
     const [q, setQ] = useState('');
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState<Contacto | null>(null);
+    const [filtroCumple, setFiltroCumple] = useState<'mes' | 'todos'>('mes');
 
     useEffect(() => { if (user) load(); }, [user]); // eslint-disable-line
 
@@ -46,6 +47,8 @@ export default function Contactos() {
     }, [contactos]);
 
     const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const mesActual = new Date().getMonth() + 1;
+    const cumplesVista = filtroCumple === 'mes' ? cumples.filter(x => x.m === mesActual) : cumples;
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
@@ -62,21 +65,32 @@ export default function Contactos() {
 
             {cumples.length > 0 && (
                 <div className="bg-gradient-to-br from-pink-500 to-rose-500 rounded-[28px] p-5 text-white shadow-lg shadow-rose-500/20">
-                    <div className="flex items-center gap-2 mb-4">
-                        <Cake className="w-5 h-5" />
-                        <h2 className="text-lg font-bold">Cumpleaños</h2>
+                    <div className="flex items-center justify-between gap-2 mb-4">
+                        <div className="flex items-center gap-2">
+                            <Cake className="w-5 h-5" />
+                            <h2 className="text-lg font-bold">Cumpleaños</h2>
+                        </div>
+                        <div className="flex gap-1 bg-white/15 rounded-full p-1">
+                            {([['mes', 'Este mes'], ['todos', 'Todos']] as const).map(([v, lbl]) => (
+                                <button key={v} onClick={() => setFiltroCumple(v)} className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${filtroCumple === v ? 'bg-white text-rose-600' : 'text-white/90 hover:bg-white/10'}`}>{lbl}</button>
+                            ))}
+                        </div>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-                        {cumples.slice(0, 8).map(({ c, days, m, d, edad }) => (
-                            <button key={c.id} onClick={() => { setEditing(c); setModalOpen(true); }} className="text-left bg-white/15 hover:bg-white/25 rounded-2xl p-3 transition-colors">
-                                <p className="font-bold text-sm truncate">{c.nombre}</p>
-                                <p className="text-xs text-white/80 mt-0.5">{d} {meses[m - 1]}{edad != null ? ` · ${edad} años` : ''}</p>
-                                <p className={`text-[11px] font-bold mt-1 ${days === 0 ? 'text-yellow-200' : 'text-white/70'}`}>
-                                    {days === 0 ? '🎉 ¡Hoy!' : days === 1 ? 'Mañana' : `en ${days} días`}
-                                </p>
-                            </button>
-                        ))}
-                    </div>
+                    {cumplesVista.length === 0 ? (
+                        <p className="text-white/80 text-sm font-medium py-2">Nadie cumple años este mes 🎈</p>
+                    ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                            {cumplesVista.map(({ c, days, m, d, edad }) => (
+                                <button key={c.id} onClick={() => { setEditing(c); setModalOpen(true); }} className="text-left bg-white/15 hover:bg-white/25 rounded-2xl p-3 transition-colors">
+                                    <p className="font-bold text-sm truncate">{c.nombre}</p>
+                                    <p className="text-xs text-white/80 mt-0.5">{d} {meses[m - 1]}{edad != null ? ` · ${edad} años` : ''}</p>
+                                    <p className={`text-[11px] font-bold mt-1 ${days === 0 ? 'text-yellow-200' : 'text-white/70'}`}>
+                                        {days === 0 ? '🎉 ¡Hoy!' : days === 1 ? 'Mañana' : `en ${days} días`}
+                                    </p>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
