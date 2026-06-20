@@ -71,3 +71,25 @@ Flujo: Telegram Trigger → Code → Responder.
 > Es un bot SEPARADO del de movimientos (un bot Telegram = un webhook). Para que el
 > bot reconozca conceptos, primero hay que abrir la app → Reporte diario una vez
 > (siembra los 8 conceptos por defecto), o crearlos ahí.
+
+## 7. Facturas de peaje/parqueadero por correo
+Workflow `MyBudget - Facturas peaje/parqueadero por correo` → id `UttDWn6XV8s8pxQs` (activo).
+Script: `scripts/n8n_factura_correo.py`. Webhook:
+`https://n8n.mystoredigital.cloud/webhook/factura-correo-7c3f9a2e5b14` (el path hace de secreto).
+
+Entrada vía **Cloudflare Email Routing**: `facturas@mystoredigital.cloud` → Email Worker
+(`scripts/cloudflare-email-worker.js`, usa `postal-mime`) → POST JSON
+`{subject, from, text, html, attachments:[{filename,mimeType,contentBase64}]}` al webhook.
+
+Flujo n8n: Webhook → Preparar → OpenRouter → Registrar y avisar → Telegram.
+1. Si hay PDF adjunto, lo manda a OpenRouter (`gpt-4o-mini` + plugin `file-parser`
+   engine `pdf-text`, gratis); si no, usa el cuerpo del correo.
+2. OpenRouter devuelve `{tipo, concepto, lugar, fecha, monto, placa}` (monto en COP).
+3. Inserta `movimientos` gasto **Pagado** en **Bancolombia** (`ef16a7f6…`), categoría
+   `Transporte`. Sube el PDF a `comprobantes/<uid>/facturas/<yyyy-mm>/` y guarda la
+   ruta en `comment`.
+4. Avisa por el bot de movimientos (chat `523281213`) con monto, lugar, nuevo saldo y
+   link firmado al PDF (7 días). Si no logra leer el monto, no inserta: solo avisa.
+
+> Cloudflare se configura en el panel del usuario (yo no tengo token de Cloudflare).
+> Si se entrega un token de Cloudflare, el Worker + routing se pueden automatizar.
