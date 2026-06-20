@@ -1,4 +1,4 @@
-import json, urllib.request, urllib.error
+import json, urllib.request, urllib.error, uuid
 
 def env(k):
     for line in open('.env', encoding='utf-8'):
@@ -8,11 +8,10 @@ def env(k):
 
 BASE = env('N8N_BASE_URL'); KEY = env('N8N_API_KEY'); SR = env('SUPABASE_SERVICE_ROLE_KEY')
 UID = '2600227a-e1d2-4995-aa23-0ec46958002a'
-BANCO = 'ef16a7f6-3ad9-4424-b231-2c5e6773420d'   # Bancolombia (COP)
 CHAT = '523281213'
 REST = 'https://tdwfsftgcbktekgknduj.supabase.co/rest/v1'
 STORAGE = 'https://tdwfsftgcbktekgknduj.supabase.co/storage/v1'
-WEBHOOK_PATH = 'factura-correo-7c3f9a2e5b14'   # difícil de adivinar (hace de secreto)
+WEBHOOK_PATH = 'factura-correo-7c3f9a2e5b14'
 TG = {'telegramApi': {'id': 'SNuF3zPIkSDlK9RO', 'name': 'Telegram account'}}
 OR_CRED = {'openRouterApi': {'id': 'GlqsWgvvC13mpS4n', 'name': 'OpenRouter account'}}
 
@@ -27,119 +26,125 @@ def api(method, path, body=None):
         try: return e.code, json.loads(e.read() or '{}')
         except Exception: return e.code, '<err>'
 
-# ---- Nodo Preparar: arma el request a OpenRouter (PDF o texto) ----
+# ---- Nodo Preparar: clasifica el correo y arma el request a OpenRouter ----
 preparar = r"""
+const SR='__SR__'; const REST='__REST__';
 const body = ($input.first().json.body) || $input.first().json;
 const subject = body.subject || '';
 const from = body.from || '';
-const text = (body.text || body.html || '').slice(0, 6000);
+const text = (body.text || body.html || '').slice(0, 7000);
 const atts = Array.isArray(body.attachments) ? body.attachments : [];
 const pdf = atts.find(a => (a.mimeType||'').includes('pdf') || /\.pdf$/i.test(a.filename||''));
 
-const system = `Eres un asistente que extrae los datos de UNA factura de peaje o parqueadero y devuelve SOLO JSON válido:
-{"tipo":"peaje"|"parqueadero"|"otro","concepto":"texto corto","lugar":"estación/parqueadero o ciudad","fecha":"YYYY-MM-DD o null","monto":number,"placa":"texto o null"}.
+const H = { apikey: SR, Authorization: 'Bearer ' + SR };
+const cuentas = await this.helpers.httpRequest({ method: 'GET', url: REST + '/cuentas?select=id,nombre,moneda&archivada=eq.false', headers: H, json: true });
+const cats = await this.helpers.httpRequest({ method: 'GET', url: REST + '/user_categories?select=name', headers: H, json: true });
+const nombres = (cuentas||[]).map(c => `${c.nombre} (${c.moneda})`).join(', ');
+const catList = (cats||[]).map(c => c.name).join(', ');
+
+const system = `Eres un asistente financiero. Lees UN correo (notificación bancaria, factura ya pagada, comprobante o cualquier cosa) y devuelves SOLO JSON válido:
+{"accion":"registrar"|"ignorar","tipo":"gasto"|"ingreso","concepto":"texto corto","comercio":"comercio/proveedor o null","monto":number,"moneda":"COP"|"USD","cuenta":"nombre exacto de la lista o null","categoria":"una de la lista o null","fecha":"YYYY-MM-DD o null"}.
+Cuentas del usuario: [${nombres}].
+Categorías: [${catList}].
+Contexto: TODO correo que llega a este buzón corresponde a una transacción que YA SE REALIZÓ (ya pagada o ya recibida). No hay pendientes.
 Reglas:
-- "monto" = total a pagar en pesos colombianos (COP), número sin símbolos ni separadores de miles.
-- Interpreta formato 12.345,67 = 12345.67 y 14.600 = 14600.
-- Si es peaje pon tipo "peaje"; si es parqueadero "parqueadero"; si no, "otro".
-- concepto corto, ej: "Peaje Los Patios" o "Parqueadero CC Jardín".`;
+- "registrar": el correo corresponde a una transacción real con un monto (pago, compra, retiro, transferencia, QR, consignación, ingreso recibido, o una factura YA PAGADA, sea en el cuerpo o en un PDF). Afecta el saldo.
+- "ignorar": SOLO si NO hay una transacción con monto (confirmaciones de reenvío, verificaciones, OTP, alertas de login/seguridad, publicidad, newsletters). En ese caso monto:0 y el resto null.
+- "tipo": "gasto" si sale dinero (pagaste/compra/factura de un proveedor a ti); "ingreso" si entra (recibiste/consignación/factura que TÚ emites a un cliente).
+- "monto": número limpio en la moneda de la transacción, sin símbolos ni separadores de miles. Formatos: "411,500.00"=411500, "411.500,00"=411500, "$72.000"=72000.
+- "cuenta": el nombre que mejor coincida de la lista (ej. "Bancolombia", "desde tu cuenta *42" → Bancolombia). Si no se sabe, null.
+- "categoria": una de la lista si encaja; si no, null.
+- Si hay PDF de factura, extrae el total pagado.`;
 
 let userContent, plugins;
 if (pdf && pdf.contentBase64) {
   userContent = [
-    { type: 'text', text: 'Extrae los datos de esta factura. Asunto del correo: ' + subject + '. Remitente: ' + from },
+    { type: 'text', text: 'Clasifica y extrae los datos. Asunto: ' + subject + '. Remitente: ' + from + '. Cuerpo:\n' + text },
     { type: 'file', file: { filename: pdf.filename || 'factura.pdf', file_data: 'data:application/pdf;base64,' + pdf.contentBase64 } },
   ];
   plugins = [{ id: 'file-parser', pdf: { engine: 'pdf-text' } }];
 } else {
-  userContent = `Extrae los datos de esta factura.\nAsunto: ${subject}\nRemitente: ${from}\nCuerpo:\n${text}`;
+  userContent = `Clasifica y extrae los datos.\nAsunto: ${subject}\nRemitente: ${from}\nCuerpo:\n${text}`;
 }
 
-const reqBody = {
-  model: 'openai/gpt-4o-mini',
-  max_tokens: 500, temperature: 0,
-  response_format: { type: 'json_object' },
-  messages: [{ role: 'system', content: system }, { role: 'user', content: userContent }],
-};
+const reqBody = { model: 'openai/gpt-4o-mini', max_tokens: 600, temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: userContent }] };
 if (plugins) reqBody.plugins = plugins;
 
 return [{ json: {
   requestBody: JSON.stringify(reqBody),
-  subject, from,
+  subject, from, cuentas,
   pdf: pdf ? { filename: pdf.filename || 'factura.pdf', mimeType: pdf.mimeType || 'application/pdf', contentBase64: pdf.contentBase64 } : null,
 } }];
-""".strip()
+""".strip().replace('__SR__', SR).replace('__REST__', REST)
 
-# ---- Nodo Insertar: parsea IA, registra gasto, sube PDF, arma aviso ----
+# ---- Nodo Registrar: según accion, guarda movimiento o factura ----
 insertar = r"""
-const SR='__SR__'; const REST='__REST__'; const STORAGE='__STORAGE__'; const UID='__UID__'; const BANCO='__BANCO__'; const CHAT='__CHAT__';
+const SR='__SR__'; const REST='__REST__'; const STORAGE='__STORAGE__'; const UID='__UID__'; const CHAT='__CHAT__';
 const prep = $('Preparar').first().json;
+const cuentas = prep.cuentas || [];
 const reply = (m) => [{ json: { chatId: CHAT, message: m } }];
 const H = { apikey: SR, Authorization: 'Bearer ' + SR };
 const HJ = { ...H, 'Content-Type': 'application/json' };
 
-let parsed = {};
-try { parsed = JSON.parse($input.first().json.choices[0].message.content); } catch (e) {}
+let p = {};
+try { p = JSON.parse($input.first().json.choices[0].message.content); } catch (e) {}
 
-const tipo = parsed.tipo || 'otro';
-let monto = Number(parsed.monto);
-const lugar = (parsed.lugar || '').toString().trim();
-let concepto = (parsed.concepto || '').toString().trim();
-if (!concepto) concepto = tipo === 'peaje' ? 'Peaje' : tipo === 'parqueadero' ? 'Parqueadero' : 'Factura';
-const fecha = (parsed.fecha && /^\d{4}-\d{2}-\d{2}$/.test(parsed.fecha)) ? parsed.fecha : new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+const accion = p.accion || 'ignorar';
+let monto = Number(p.monto);
+if (accion !== 'registrar' || !(monto > 0)) return [];  // no financiero → silencio
 
-const fmt = (n) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(n);
+const tipo = p.tipo === 'ingreso' ? 'ingreso' : 'gasto';
+let concepto = (p.concepto || '').toString().trim() || (tipo === 'ingreso' ? 'Ingreso' : 'Gasto');
+const comercio = (p.comercio || '').toString().trim();
+const fecha = (p.fecha && /^\d{4}-\d{2}-\d{2}$/.test(p.fecha)) ? p.fecha : new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+const categoria = p.categoria || null;
 
-// Sube el PDF (si hay) a comprobantes y devuelve {path, url firmada}
-const subirPDF = async (mid) => {
-  const p = prep.pdf;
-  const path = UID + '/facturas/' + fecha.slice(0, 7) + '/' + (mid || 'sinmov') + '_' + (p.filename || 'factura.pdf').replace(/[^\w.\-]/g, '_');
-  const buf = Buffer.from(p.contentBase64, 'base64');
-  await this.helpers.httpRequest({ method: 'POST', url: STORAGE + '/object/comprobantes/' + encodeURI(path), headers: { ...H, 'Content-Type': p.mimeType, 'x-upsert': 'true' }, body: buf });
+// Resolver cuenta y moneda
+let cuenta = null;
+if (p.cuenta) { const q = String(p.cuenta).toLowerCase(); cuenta = cuentas.find(c => c.nombre.toLowerCase() === q) || cuentas.find(c => c.nombre.toLowerCase().includes(q) || q.includes(c.nombre.toLowerCase())); }
+let moneda = p.moneda === 'USD' ? 'USD' : p.moneda === 'COP' ? 'COP' : null;
+if (!cuenta) {
+  if (moneda === 'USD') cuenta = cuentas.find(c => c.moneda === 'USD');
+  else cuenta = cuentas.find(c => c.nombre.toLowerCase().includes('bancolombia')) || cuentas.find(c => c.moneda === 'COP');
+}
+if (!moneda) moneda = cuenta ? cuenta.moneda : 'COP';
+
+const fmt = (n, c) => new Intl.NumberFormat(c === 'COP' ? 'es-CO' : 'en-US', { style: 'currency', currency: c, minimumFractionDigits: c === 'COP' ? 0 : 2 }).format(n);
+
+const subirPDF = async (folder, refId) => {
+  const f = prep.pdf;
+  const path = UID + '/' + folder + '/' + fecha.slice(0, 7) + '/' + (refId || 'ref') + '_' + (f.filename || 'factura.pdf').replace(/[^\w.\-]/g, '_');
+  await this.helpers.httpRequest({ method: 'POST', url: STORAGE + '/object/comprobantes/' + encodeURI(path), headers: { ...H, 'Content-Type': f.mimeType, 'x-upsert': 'true' }, body: Buffer.from(f.contentBase64, 'base64') });
   const signed = await this.helpers.httpRequest({ method: 'POST', url: STORAGE + '/object/sign/comprobantes/' + encodeURI(path), headers: HJ, body: { expiresIn: 604800 }, json: true });
   return { path, url: 'https://tdwfsftgcbktekgknduj.supabase.co/storage/v1' + (signed.signedURL || signed.signedUrl || '') };
 };
 
-if (!(monto > 0)) {
-  // Sin monto fiable: guardamos el PDF (si hay) y avisamos para revisar a mano.
-  let link = '';
-  if (prep.pdf) { try { const r = await subirPDF(null); link = '\n\n📎 [Ver factura](' + r.url + ')'; } catch (e) {} }
-  return reply('🧾 Llegó una factura ('+concepto+') pero no pude leer el monto. Revísala en el correo.' + link);
-}
-
-// 1) Registrar el gasto Pagado en Bancolombia
+// ── Todo correo ya fue pagado/recibido → movimientos (Pagado) ──
 const ins = await this.helpers.httpRequest({
-  method: 'POST', url: REST + '/movimientos',
-  headers: { ...HJ, Prefer: 'return=representation' },
-  body: { user_id: UID, tipo: 'gasto', concepto, monto, moneda: 'COP', cuenta_id: BANCO, categoria: 'Transporte', status: 'Pagado', fecha, comment: lugar ? ('Factura email · ' + lugar) : 'Factura email' },
+  method: 'POST', url: REST + '/movimientos', headers: { ...HJ, Prefer: 'return=representation' },
+  body: { user_id: UID, tipo, concepto, monto, moneda, cuenta_id: cuenta ? cuenta.id : null, categoria, status: 'Pagado', fecha, comment: comercio ? ('Correo · ' + comercio) : 'Correo' },
   json: true,
 });
 const movId = Array.isArray(ins) ? ins[0].id : ins.id;
-
-// 2) Subir el PDF a comprobantes y guardar la ruta en el movimiento
 let pdfUrl = '';
 if (prep.pdf) {
   try {
-    const r = await subirPDF(movId);
+    const r = await subirPDF('movimientos', movId);
     pdfUrl = r.url;
-    await this.helpers.httpRequest({ method: 'PATCH', url: REST + '/movimientos?id=eq.' + movId, headers: { ...HJ, Prefer: 'return=minimal' }, body: { comment: (lugar ? ('Factura email · ' + lugar) : 'Factura email') + ' · comprobante:' + r.path }, json: true });
+    await this.helpers.httpRequest({ method: 'PATCH', url: REST + '/movimientos?id=eq.' + movId, headers: { ...HJ, Prefer: 'return=minimal' }, body: { comment: (comercio ? ('Correo · ' + comercio) : 'Correo') + ' · comprobante:' + r.path }, json: true });
   } catch (e) {}
 }
-
-// 3) Nuevo saldo y aviso
 let saldoTxt = '';
-try {
-  const s = await this.helpers.httpRequest({ method: 'GET', url: REST + '/cuentas_saldos?select=saldo_actual&id=eq.' + BANCO, headers: H, json: true });
-  if (Array.isArray(s) && s[0]) saldoTxt = '\n\n💼 Nuevo saldo Bancolombia: *' + fmt(Number(s[0].saldo_actual)) + '*';
-} catch (e) {}
-
-const icon = tipo === 'peaje' ? '🛣️' : tipo === 'parqueadero' ? '🅿️' : '🧾';
-let m = icon + ' *' + (tipo === 'peaje' ? 'Peaje' : tipo === 'parqueadero' ? 'Parqueadero' : 'Factura') + ' registrado*\n\n*' + concepto + '*\n' + fmt(monto) + ' · Bancolombia · ' + fecha;
-if (lugar) m += '\n📍 ' + lugar;
-m += saldoTxt;
-if (pdfUrl) m += '\n\n📎 [Ver factura](' + pdfUrl + ')';
+if (cuenta) {
+  try {
+    const s = await this.helpers.httpRequest({ method: 'GET', url: REST + '/cuentas_saldos?select=saldo_actual&id=eq.' + cuenta.id, headers: H, json: true });
+    if (Array.isArray(s) && s[0]) saldoTxt = '\n\n💼 Nuevo saldo ' + cuenta.nombre + ': *' + fmt(Number(s[0].saldo_actual), cuenta.moneda) + '*';
+  } catch (e) {}
+}
+const emoji = tipo === 'ingreso' ? '💰' : '💸';
+let m = emoji + ' *' + (tipo === 'ingreso' ? 'Ingreso' : 'Gasto') + ' registrado*\n\n*' + concepto + '*\n' + fmt(monto, moneda) + (cuenta ? (' · ' + cuenta.nombre) : '') + ' · ' + fecha + (comercio ? ('\n📍 ' + comercio) : '') + saldoTxt + (pdfUrl ? ('\n\n📎 [Ver](' + pdfUrl + ')') : '');
 return reply(m);
-""".strip().replace('__SR__', SR).replace('__REST__', REST).replace('__STORAGE__', STORAGE).replace('__UID__', UID).replace('__BANCO__', BANCO).replace('__CHAT__', CHAT)
+""".strip().replace('__SR__', SR).replace('__REST__', REST).replace('__STORAGE__', STORAGE).replace('__UID__', UID).replace('__CHAT__', CHAT)
 
 wf = {
     'name': 'MyBudget - Facturas peaje/parqueadero por correo',

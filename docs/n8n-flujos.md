@@ -82,14 +82,19 @@ Entrada vía **Cloudflare Email Routing**: `facturas@mystoredigital.cloud` → E
 `{subject, from, text, html, attachments:[{filename,mimeType,contentBase64}]}` al webhook.
 
 Flujo n8n: Webhook → Preparar → OpenRouter → Registrar y avisar → Telegram.
+GENERAL (no solo peaje): todo correo a ese buzón es una transacción YA realizada.
 1. Si hay PDF adjunto, lo manda a OpenRouter (`gpt-4o-mini` + plugin `file-parser`
-   engine `pdf-text`, gratis); si no, usa el cuerpo del correo.
-2. OpenRouter devuelve `{tipo, concepto, lugar, fecha, monto, placa}` (monto en COP).
-3. Inserta `movimientos` gasto **Pagado** en **Bancolombia** (`ef16a7f6…`), categoría
-   `Transporte`. Sube el PDF a `comprobantes/<uid>/facturas/<yyyy-mm>/` y guarda la
+   engine `pdf-text`, gratis); si no, usa el cuerpo del correo. Recibe la lista de
+   cuentas y categorías del usuario para clasificar.
+2. OpenRouter devuelve `{accion, tipo, concepto, comercio, monto, moneda, cuenta,
+   categoria, fecha}`. `accion`: `registrar` (transacción con monto) | `ignorar`
+   (newsletters, OTP, verificaciones, login — no escribe nada).
+3. Si `registrar`: inserta `movimientos` **Pagado** (gasto o ingreso) en la cuenta
+   detectada (por nombre o por moneda; default Bancolombia para COP, primera USD para
+   USD). Sube el PDF (si hay) a `comprobantes/<uid>/movimientos/<yyyy-mm>/` y guarda la
    ruta en `comment`.
-4. Avisa por el bot de movimientos (chat `523281213`) con monto, lugar, nuevo saldo y
-   link firmado al PDF (7 días). Si no logra leer el monto, no inserta: solo avisa.
+4. Avisa por el bot de movimientos (chat `523281213`) con tipo, monto, cuenta, nuevo
+   saldo y link al PDF. Si `ignorar` o sin monto, no inserta ni avisa (silencio).
 
 > Cloudflare se configura en el panel del usuario (yo no tengo token de Cloudflare).
 > Si se entrega un token de Cloudflare, el Worker + routing se pueden automatizar.
