@@ -14,7 +14,8 @@ import {
   CircleDashed,
   Wallet,
   Globe,
-  ClipboardList
+  ClipboardList,
+  BarChart3
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -46,6 +47,7 @@ export default function Layout() {
         { to: '/expenses/estado', icon: CreditCard, label: 'Presupuestos' },
         { to: '/expenses/categoria', icon: PieChart, label: 'Categorías' },
         { to: '/expenses/calendar', icon: CalendarIcon, label: 'Calendario' },
+        { to: '/reportes', icon: BarChart3, label: 'Reportes' },
       ],
     },
     {
