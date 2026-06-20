@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Users, Search, Pencil, Phone, Mail, Building2 } from 'lucide-react';
+import { Plus, Users, Search, Pencil, Phone, Mail, Building2, Cake } from 'lucide-react';
 import { supabase, Contacto } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import ContactoModal from '../components/ContactoModal';
@@ -28,6 +28,25 @@ export default function Contactos() {
         return contactos.filter(c => c.nombre.toLowerCase().includes(s) || (c.empresa || '').toLowerCase().includes(s) || (c.telefono || '').includes(s) || (c.email || '').toLowerCase().includes(s));
     }, [contactos, q]);
 
+    const cumples = useMemo(() => {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        return contactos
+            .filter(c => c.fecha_nacimiento)
+            .map(c => {
+                const [y, m, d] = c.fecha_nacimiento!.split('-').map(Number);
+                let next = new Date(today.getFullYear(), m - 1, d); next.setHours(0, 0, 0, 0);
+                if (next < today) next = new Date(today.getFullYear() + 1, m - 1, d);
+                const days = Math.round((next.getTime() - today.getTime()) / 86400000);
+                const yearKnown = y > 1900;
+                const turning = yearKnown ? next.getFullYear() - y : null;            // edad que cumple
+                const edad = yearKnown ? (days === 0 ? turning! : turning! - 1) : null; // edad hoy
+                return { c, days, m, d, edad, turning, next };
+            })
+            .sort((a, b) => a.days - b.days);
+    }, [contactos]);
+
+    const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex items-center justify-between flex-wrap gap-4">
@@ -40,6 +59,26 @@ export default function Contactos() {
                 </div>
                 <button onClick={() => { setEditing(null); setModalOpen(true); }} className="px-5 py-3 rounded-2xl font-bold text-white bg-teal-900 hover:bg-teal-800 dark:bg-teal-600 dark:hover:bg-teal-500 transition-colors flex items-center gap-2 shadow-md shadow-teal-900/20"><Plus className="w-5 h-5" /> Nuevo contacto</button>
             </div>
+
+            {cumples.length > 0 && (
+                <div className="bg-gradient-to-br from-pink-500 to-rose-500 rounded-[28px] p-5 text-white shadow-lg shadow-rose-500/20">
+                    <div className="flex items-center gap-2 mb-4">
+                        <Cake className="w-5 h-5" />
+                        <h2 className="text-lg font-bold">Cumpleaños</h2>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                        {cumples.slice(0, 8).map(({ c, days, m, d, edad }) => (
+                            <button key={c.id} onClick={() => { setEditing(c); setModalOpen(true); }} className="text-left bg-white/15 hover:bg-white/25 rounded-2xl p-3 transition-colors">
+                                <p className="font-bold text-sm truncate">{c.nombre}</p>
+                                <p className="text-xs text-white/80 mt-0.5">{d} {meses[m - 1]}{edad != null ? ` · ${edad} años` : ''}</p>
+                                <p className={`text-[11px] font-bold mt-1 ${days === 0 ? 'text-yellow-200' : 'text-white/70'}`}>
+                                    {days === 0 ? '🎉 ¡Hoy!' : days === 1 ? 'Mañana' : `en ${days} días`}
+                                </p>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <div className="relative max-w-md">
                 <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />

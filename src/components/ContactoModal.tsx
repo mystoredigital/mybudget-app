@@ -13,7 +13,7 @@ type Props = {
 export default function ContactoModal({ isOpen, onClose, onSuccess, contactoToEdit }: Props) {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
-    const [f, setF] = useState({ nombre: '', empresa: '', telefono: '', email: '', notas: '' });
+    const [f, setF] = useState({ nombre: '', empresa: '', telefono: '', email: '', notas: '', fecha_nacimiento: '' });
 
     useEffect(() => {
         if (!isOpen) return;
@@ -23,6 +23,7 @@ export default function ContactoModal({ isOpen, onClose, onSuccess, contactoToEd
             telefono: contactoToEdit?.telefono || '',
             email: contactoToEdit?.email || '',
             notas: contactoToEdit?.notas || '',
+            fecha_nacimiento: contactoToEdit?.fecha_nacimiento || '',
         });
     }, [isOpen, contactoToEdit]);
 
@@ -41,6 +42,7 @@ export default function ContactoModal({ isOpen, onClose, onSuccess, contactoToEd
                 user_id: user.id, nombre: f.nombre.trim(),
                 empresa: f.empresa.trim() || null, telefono: f.telefono.trim() || null,
                 email: f.email.trim() || null, notas: f.notas.trim() || null,
+                fecha_nacimiento: f.fecha_nacimiento || null,
             };
             const { error } = contactoToEdit
                 ? await supabase.from('contactos').update(payload).eq('id', contactoToEdit.id)
@@ -86,7 +88,10 @@ export default function ContactoModal({ isOpen, onClose, onSuccess, contactoToEd
                         <div><label className={label}>Empresa</label><input value={f.empresa} onChange={e => set('empresa', e.target.value)} className={input} /></div>
                         <div><label className={label}>Teléfono</label><input value={f.telefono} onChange={e => set('telefono', e.target.value)} className={input} /></div>
                     </div>
-                    <div><label className={label}>Email</label><input value={f.email} onChange={e => set('email', e.target.value)} className={input} /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div><label className={label}>Email</label><input value={f.email} onChange={e => set('email', e.target.value)} className={input} /></div>
+                        <div><label className={label}>Cumpleaños</label><input type="date" value={f.fecha_nacimiento} onChange={e => set('fecha_nacimiento', e.target.value)} className={input} /></div>
+                    </div>
                     <div><label className={label}>Notas</label><input value={f.notas} onChange={e => set('notas', e.target.value)} className={input} /></div>
                 </div>
 

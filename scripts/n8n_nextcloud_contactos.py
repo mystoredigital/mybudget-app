@@ -61,6 +61,11 @@ const vprop=(vcard,name)=>{
   }
   return null;
 };
+const normBday=(b)=>{ if(!b) return null; b=b.trim();
+  let m=b.match(/^(\d{4})-?(\d{2})-?(\d{2})/); if(m){ const y=(m[1]==='0000')?'1900':m[1]; return y+'-'+m[2]+'-'+m[3]; }
+  m=b.match(/^--(\d{2})-?(\d{2})/); if(m) return '1900-'+m[1]+'-'+m[2];
+  return null;
+};
 
 let nuevos=0, actualizados=0, leidos=0;
 const rep='<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><c:address-data/></d:prop></c:addressbook-query>';
@@ -77,7 +82,7 @@ for(const href of abs){
     let fn=vprop(vcard,'FN'); const uid=vprop(vcard,'UID');
     if(!uid) continue;
     if(!fn){ const n=vprop(vcard,'N'); if(n){ const p=n.split(';').filter(Boolean); fn=[p[1],p[0]].filter(Boolean).join(' ').trim()||n; } }
-    const c={nombre:fn||'(sin nombre)',email:vprop(vcard,'EMAIL'),telefono:vprop(vcard,'TEL'),empresa:vprop(vcard,'ORG'),notas:vprop(vcard,'NOTE')};
+    const c={nombre:fn||'(sin nombre)',email:vprop(vcard,'EMAIL'),telefono:vprop(vcard,'TEL'),empresa:vprop(vcard,'ORG'),notas:vprop(vcard,'NOTE'),fecha_nacimiento:normBday(vprop(vcard,'BDAY'))};
     const ex=await this.helpers.httpRequest({method:'GET',url:REST+'/contactos?select=id&user_id=eq.'+UID+'&nc_uid=eq.'+encodeURIComponent(uid),headers:SH,json:true});
     if(Array.isArray(ex)&&ex[0]){
       await this.helpers.httpRequest({method:'PATCH',url:REST+'/contactos?id=eq.'+ex[0].id,headers:{...SHJ,Prefer:'return=minimal'},body:c,json:true});

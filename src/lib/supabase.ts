@@ -232,6 +232,7 @@ export type Contacto = {
   nc_uid: string | null;
   nc_etag: string | null;
   avatar_url: string | null;
+  fecha_nacimiento: string | null;
   archivado: boolean;
   created_at: string;
   updated_at: string;
