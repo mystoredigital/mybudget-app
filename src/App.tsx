@@ -18,6 +18,7 @@ import Cuentas from './pages/Cuentas';
 import Servicios from './pages/Servicios';
 import ReporteDiario from './pages/ReporteDiario';
 import Reportes from './pages/Reportes';
+import Contactos from './pages/Contactos';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
@@ -57,6 +58,7 @@ export default function App() {
               <Route path="expenses/food" element={<FoodExpenses />} />
               <Route path="expenses/calendar" element={<CalendarView />} />
               <Route path="reportes" element={<Reportes />} />
+              <Route path="contactos" element={<Contactos />} />
               <Route path="portfolios" element={<PortfoliosList />} />
               <Route path="portfolios/:id" element={<PortfolioDetail />} />
               <Route path="settings" element={<Settings />} />

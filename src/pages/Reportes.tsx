@@ -6,7 +6,7 @@ import {
     ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
     PieChart, Pie, Cell, Legend,
 } from 'recharts';
-import { supabase, Expense, Movimiento, UserPortfolio, UserCategory, Currency } from '../lib/supabase';
+import { supabase, Expense, Movimiento, UserPortfolio, UserCategory, Contacto, Currency } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../lib/utils';
 
@@ -25,6 +25,7 @@ type Row = {
     fuente: 'presupuesto' | 'cuenta';
     estado: string;
     portafolio: string | null;
+    contactoId: string | null;
 };
 
 const PIE_COLORS = ['#0d9488', '#f97316', '#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6', '#ef4444', '#22c55e', '#3b82f6', '#a855f7', '#eab308'];
@@ -35,6 +36,7 @@ export default function Reportes() {
     const [rows, setRows] = useState<Row[]>([]);
     const [categorias, setCategorias] = useState<string[]>([]);
     const [portafolios, setPortafolios] = useState<string[]>([]);
+    const [contactos, setContactos] = useState<Contacto[]>([]);
 
     // Filtros
     const now = new Date();
@@ -46,20 +48,22 @@ export default function Reportes() {
     const [estado, setEstado] = useState('Todos');
     const [fuente, setFuente] = useState<'Ambos' | 'presupuesto' | 'cuenta'>('Ambos');
     const [moneda, setMoneda] = useState<Currency>('COP');
+    const [contacto, setContacto] = useState('Todos');
 
     useEffect(() => { if (user) load(); }, [user]); // eslint-disable-line
 
     async function load() {
         if (!user) return;
         setLoading(true);
-        const [exp, mov, cats, ports] = await Promise.all([
-            supabase.from('expenses').select('id, expense, categoria, valor, moneda, status, fecha, portafolio').eq('user_id', user.id),
-            supabase.from('movimientos').select('id, tipo, concepto, monto, moneda, categoria, fecha, expense_id').eq('user_id', user.id),
+        const [exp, mov, cats, ports, conts] = await Promise.all([
+            supabase.from('expenses').select('id, expense, categoria, valor, moneda, status, fecha, portafolio, contacto_id').eq('user_id', user.id),
+            supabase.from('movimientos').select('id, tipo, concepto, monto, moneda, categoria, fecha, expense_id, contacto_id').eq('user_id', user.id),
             supabase.from('user_categories').select('name').eq('user_id', user.id).order('name'),
             supabase.from('user_portfolios').select('name').eq('user_id', user.id).order('name'),
+            supabase.from('contactos').select('*').eq('user_id', user.id).order('nombre'),
         ]);
 
-        const movs = (mov.data as (Movimiento & { expense_id: string | null })[]) || [];
+        const movs = (mov.data as (Movimiento & { expense_id: string | null; contacto_id: string | null })[]) || [];
         const paidExpenseIds = new Set(movs.filter(m => m.expense_id).map(m => m.expense_id));
 
         const out: Row[] = [];
@@ -70,7 +74,7 @@ export default function Reportes() {
             out.push({
                 fecha: m.fecha, mes: m.fecha.slice(0, 7), concepto: m.concepto || '(sin concepto)',
                 categoria: m.categoria || 'Sin categoría', monto: Number(m.monto) || 0, moneda: m.moneda,
-                tipo: m.tipo, fuente: 'cuenta', estado: 'Pagado', portafolio: null,
+                tipo: m.tipo, fuente: 'cuenta', estado: 'Pagado', portafolio: null, contactoId: m.contacto_id || null,
             });
         }
         // Expenses del presupuesto que NO tienen movimiento asociado (evita doble conteo)
@@ -80,13 +84,14 @@ export default function Reportes() {
             out.push({
                 fecha: e.fecha, mes: e.fecha.slice(0, 7), concepto: e.expense || '(sin concepto)',
                 categoria: e.categoria || 'Sin categoría', monto: Number(e.valor) || 0, moneda: e.moneda,
-                tipo: 'gasto', fuente: 'presupuesto', estado: e.status, portafolio: e.portafolio || null,
+                tipo: 'gasto', fuente: 'presupuesto', estado: e.status, portafolio: e.portafolio || null, contactoId: e.contacto_id || null,
             });
         }
 
         setRows(out);
         setCategorias((cats.data || []).map((c: UserCategory) => c.name));
         setPortafolios(((ports.data as UserPortfolio[]) || []).map(p => p.name));
+        setContactos((conts.data as Contacto[]) || []);
         setLoading(false);
     }
 
@@ -98,8 +103,9 @@ export default function Reportes() {
         if (fuente !== 'Ambos' && r.fuente !== fuente) return false;
         if (estado !== 'Todos' && r.estado !== estado) return false;
         if (portafolio !== 'Todos') { if (r.fuente !== 'presupuesto' || r.portafolio !== portafolio) return false; }
+        if (contacto !== 'Todos') { if (contacto === '__none__' ? r.contactoId !== null : r.contactoId !== contacto) return false; }
         return true;
-    }), [rows, moneda, desde, hasta, categoria, tipo, fuente, estado, portafolio]);
+    }), [rows, moneda, desde, hasta, categoria, tipo, fuente, estado, portafolio, contacto]);
 
     const kpis = useMemo(() => {
         let gasto = 0, ingreso = 0;
@@ -195,6 +201,14 @@ export default function Reportes() {
                             <option value="Ambos">Ambos</option>
                             <option value="presupuesto">Presupuesto</option>
                             <option value="cuenta">Cuentas</option>
+                        </select>
+                    </label>
+                    <label className="flex flex-col gap-1">
+                        <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wide">Persona</span>
+                        <select value={contacto} onChange={e => setContacto(e.target.value)} className={sel}>
+                            <option value="Todos">Todas</option>
+                            {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                            <option value="__none__">Sin destinatario</option>
                         </select>
                     </label>
                     <label className="flex flex-col gap-1">

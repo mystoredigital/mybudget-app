@@ -45,6 +45,7 @@ export type Expense = {
   frecuencia: Frecuencia;
   cuenta_id: string | null; // v2: cuenta de la que salió el pago
   servicio_id: string | null; // v2: servicio que generó este pago
+  contacto_id: string | null; // v2: destinatario del pago
   created_at: string;
   updated_at: string;
   vence_en?: string; // From view
@@ -213,7 +214,25 @@ export type Movimiento = {
   categoria: string | null;
   status: 'Pendiente' | 'Pagado';
   expense_id: string | null;
+  contacto_id: string | null;       // v2: destinatario del pago
   comment: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Contacto = {
+  id: string;
+  user_id: string;
+  nombre: string;
+  email: string | null;
+  telefono: string | null;
+  empresa: string | null;
+  notas: string | null;
+  origen: 'manual' | 'nextcloud';
+  nc_uid: string | null;
+  nc_etag: string | null;
+  avatar_url: string | null;
+  archivado: boolean;
   created_at: string;
   updated_at: string;
 };

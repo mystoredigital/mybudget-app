@@ -3,6 +3,7 @@ import { supabase, Expense, UserCategory, UserPortfolio } from '../lib/supabase'
 import { X, Trash2, Plus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
+import ContactoSelect from './ContactoSelect';
 
 type ExpenseModalProps = {
     isOpen: boolean;
@@ -37,6 +38,7 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
         cuenta: '',
         nombre: '',
         link: '',
+        contacto_id: null as string | null,
     };
 
     const [formData, setFormData] = useState(defaultForm);
@@ -84,6 +86,7 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
                     cuenta: expenseToEdit.cuenta || '',
                     nombre: expenseToEdit.nombre || '',
                     link: expenseToEdit.link || '',
+                    contacto_id: expenseToEdit.contacto_id || null,
                 });
             } else {
                 setFormData(defaultForm);
@@ -194,6 +197,7 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
                 cuenta: formData.cuenta,
                 nombre: formData.nombre,
                 link: formData.link || null,
+                contacto_id: formData.contacto_id,
             };
 
             let dataResult;
@@ -299,6 +303,8 @@ export default function ExpenseModal({ isOpen, onClose, onSuccess, expenseToEdit
                                 <p className="text-[11px] text-zinc-400 mt-1.5 font-medium">Enlace al sitio donde se realiza el pago</p>
                             </div>
                         </div>
+
+                        <ContactoSelect value={formData.contacto_id} onChange={(id) => setFormData({ ...formData, contacto_id: id })} label="A quién le pagas" />
 
                         {/* Clasification - Dynamic */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

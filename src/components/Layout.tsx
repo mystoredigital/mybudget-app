@@ -15,7 +15,8 @@ import {
   Wallet,
   Globe,
   ClipboardList,
-  BarChart3
+  BarChart3,
+  Contact
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -53,6 +54,7 @@ export default function Layout() {
     {
       title: 'Sistema',
       items: [
+        { to: '/contactos', icon: Contact, label: 'Contactos' },
         { to: '/settings', icon: Settings, label: 'Ajustes' },
       ],
     },

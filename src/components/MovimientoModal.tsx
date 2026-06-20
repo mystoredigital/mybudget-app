@@ -3,6 +3,7 @@ import { supabase, CuentaSaldo, MovimientoTipo, Movimiento } from '../lib/supaba
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../lib/utils';
 import { X, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Trash2 } from 'lucide-react';
+import ContactoSelect from './ContactoSelect';
 
 type Props = {
     isOpen: boolean;
@@ -33,6 +34,7 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
     const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
     const [tasa, setTasa] = useState('');
     const [comision, setComision] = useState('');
+    const [contactoId, setContactoId] = useState<string | null>(null);
 
     const activas = useMemo(() => cuentas.filter(c => !c.archivada), [cuentas]);
 
@@ -48,6 +50,7 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
             setFecha(movToEdit.fecha);
             setTasa(movToEdit.tasa_usada ? String(movToEdit.tasa_usada) : (defaultRate ? String(defaultRate) : ''));
             setComision(movToEdit.comision ? String(movToEdit.comision) : '');
+            setContactoId(movToEdit.contacto_id || null);
         } else {
             setTipo(initialTipo || 'gasto');
             setCuentaId(activas[0]?.id || '');
@@ -58,6 +61,7 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
             setFecha(new Date().toISOString().split('T')[0]);
             setTasa(defaultRate ? String(defaultRate) : '');
             setComision('');
+            setContactoId(null);
         }
     }, [isOpen, movToEdit]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -115,6 +119,7 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
                 monto_destino: tipo === 'traslado' ? montoDestino : null,
                 comision: tipo === 'traslado' ? (Number(comision) || 0) : 0,
                 categoria: tipo === 'gasto' ? (categoria || null) : null,
+                contacto_id: tipo === 'traslado' ? null : contactoId,
                 status: 'Pagado',
             };
             const { error } = movToEdit
@@ -224,6 +229,10 @@ export default function MovimientoModal({ isOpen, onClose, onSuccess, cuentas, c
                                 {categorias.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                         </div>
+                    )}
+
+                    {tipo !== 'traslado' && (
+                        <ContactoSelect value={contactoId} onChange={setContactoId} label={tipo === 'ingreso' ? 'De quién' : 'A quién le pagas'} />
                     )}
 
                     <div className="grid grid-cols-2 gap-4">
