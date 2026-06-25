@@ -11,3 +11,6 @@ coverage/
 # Reference material (Notion exports, etc.)
 Documentos/
 documentos/
+
+# Syncthing/Nextcloud conflict copies
+*.sync-conflict-*
