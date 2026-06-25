@@ -136,6 +136,8 @@ export default function Reportes() {
             .map(([mes, v]) => ({ mes: fmtMonthKey(mes), Gastos: Math.round(v.gasto), Ingresos: Math.round(v.ingreso) }));
     }, [filtered]);
 
+    const detalle = useMemo(() => [...filtered].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')), [filtered]);
+
     const fmt = (n: number) => formatCurrency(n, moneda);
     const sel = "px-3 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-semibold text-zinc-700 dark:text-zinc-200 outline-none focus:ring-2 focus:ring-teal-500";
 
@@ -283,6 +285,31 @@ export default function Reportes() {
                                     <span className="flex-1 text-sm font-semibold text-zinc-800 dark:text-zinc-200">{c.name} <span className="text-zinc-400 font-normal">· {c.count}</span></span>
                                     <span className="text-xs text-zinc-400 w-12 text-right">{c.pct.toFixed(0)}%</span>
                                     <span className="text-sm font-bold text-zinc-900 dark:text-white w-32 text-right tabular-nums">{fmt(c.monto)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Detalle de transacciones */}
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden">
+                        <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                            <h3 className="font-bold text-zinc-900 dark:text-white">Detalle ({detalle.length})</h3>
+                            <span className="text-xs text-zinc-400 hidden sm:block">cada transacción del filtro</span>
+                        </div>
+                        <div className="max-h-[28rem] overflow-y-auto divide-y divide-zinc-50 dark:divide-zinc-800/60">
+                            {detalle.map((r, i) => (
+                                <div key={i} className="flex items-center gap-3 px-5 py-2.5">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">{r.concepto}</p>
+                                        <p className="text-[11px] text-zinc-400 truncate">
+                                            {r.fecha} · {r.categoria}
+                                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${r.fuente === 'cuenta' ? 'bg-teal-50 text-teal-600 dark:bg-teal-900/20' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'}`}>{r.fuente === 'cuenta' ? 'CUENTA' : 'PRESUP'}</span>
+                                            {r.estado !== 'Pagado' && <span className="ml-1 text-orange-500 font-bold">{r.estado}</span>}
+                                        </p>
+                                    </div>
+                                    <span className={`text-sm font-bold shrink-0 tabular-nums ${r.tipo === 'ingreso' ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-900 dark:text-white'}`}>
+                                        {r.tipo === 'ingreso' ? '+' : '-'}{fmt(r.monto)}
+                                    </span>
                                 </div>
                             ))}
                         </div>

@@ -3,6 +3,7 @@ import { supabase, CuentaSaldo, Cuenta, Movimiento, TasaCambio } from '../lib/su
 import { formatCurrency } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, Wallet, Landmark, CreditCard, Banknote, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Pencil, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import CuentaModal from '../components/CuentaModal';
 import MovimientoModal from '../components/MovimientoModal';
 
@@ -170,8 +171,9 @@ export default function Cuentas() {
 
                     {/* Movimientos */}
                     <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-100 dark:border-zinc-800 overflow-hidden">
-                        <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
+                        <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                             <h3 className="font-bold text-zinc-900 dark:text-white">Últimos movimientos</h3>
+                            <Link to="/movimientos" className="text-sm font-bold text-teal-600 dark:text-teal-400 hover:text-teal-500">Ver todos →</Link>
                         </div>
                         {movimientos.length === 0 ? (
                             <div className="p-8 text-center text-zinc-500 font-medium">Sin movimientos todavía.</div>

@@ -14,12 +14,6 @@ import FoodExpenses from './pages/FoodExpenses';
 import Settings from './pages/Settings';
 import PortfoliosList from './pages/PortfoliosList';
 import PortfolioDetail from './pages/PortfolioDetail';
-import Cuentas from './pages/Cuentas';
-import Movimientos from './pages/Movimientos';
-import Servicios from './pages/Servicios';
-import ReporteDiario from './pages/ReporteDiario';
-import Reportes from './pages/Reportes';
-import Contactos from './pages/Contactos';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
@@ -49,18 +43,12 @@ export default function App() {
               </ProtectedRoute>
             }>
               <Route index element={<Dashboard />} />
-              <Route path="cuentas" element={<Cuentas />} />
-              <Route path="movimientos" element={<Movimientos />} />
-              <Route path="servicios" element={<Servicios />} />
-              <Route path="reporte-diario" element={<ReporteDiario />} />
               <Route path="expenses" element={<ExpensesTable />} />
               <Route path="expenses/estado" element={<ExpensesByStatus />} />
               <Route path="expenses/categoria" element={<ExpensesByCategory />} />
               <Route path="expenses/mes" element={<ExpensesByMonth />} />
               <Route path="expenses/food" element={<FoodExpenses />} />
               <Route path="expenses/calendar" element={<CalendarView />} />
-              <Route path="reportes" element={<Reportes />} />
-              <Route path="contactos" element={<Contactos />} />
               <Route path="portfolios" element={<PortfoliosList />} />
               <Route path="portfolios/:id" element={<PortfolioDetail />} />
               <Route path="settings" element={<Settings />} />
