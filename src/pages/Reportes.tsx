@@ -6,9 +6,11 @@ import {
     ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
     PieChart, Pie, Cell, Legend,
 } from 'recharts';
-import { supabase, Expense, Movimiento, UserPortfolio, UserCategory, Contacto, Currency } from '../lib/supabase';
+import { supabase, Expense, Movimiento, UserPortfolio, UserCategory, Contacto, Currency, CuentaSaldo, TasaCambio } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../lib/utils';
+import ExpenseModal from '../components/ExpenseModal';
+import MovimientoModal from '../components/MovimientoModal';
 
 const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const fmtMonthKey = (k: string) => { const [y, m] = k.split('-'); return `${monthNames[Number(m) - 1]} ${String(y).slice(2)}`; };
@@ -26,6 +28,7 @@ type Row = {
     estado: string;
     portafolio: string | null;
     contactoId: string | null;
+    sourceId: string;   // id del expense o movimiento original
 };
 
 const PIE_COLORS = ['#0d9488', '#f97316', '#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6', '#ef4444', '#22c55e', '#3b82f6', '#a855f7', '#eab308'];
@@ -37,6 +40,16 @@ export default function Reportes() {
     const [categorias, setCategorias] = useState<string[]>([]);
     const [portafolios, setPortafolios] = useState<string[]>([]);
     const [contactos, setContactos] = useState<Contacto[]>([]);
+    const [cuentas, setCuentas] = useState<CuentaSaldo[]>([]);
+    const [rate, setRate] = useState<number | null>(null);
+    const [expById, setExpById] = useState<Record<string, Expense>>({});
+    const [movById, setMovById] = useState<Record<string, Movimiento>>({});
+
+    // Edición
+    const [expToEdit, setExpToEdit] = useState<Expense | null>(null);
+    const [expModalOpen, setExpModalOpen] = useState(false);
+    const [movToEdit, setMovToEdit] = useState<Movimiento | null>(null);
+    const [movModalOpen, setMovModalOpen] = useState(false);
 
     // Filtros
     const now = new Date();
@@ -55,16 +68,22 @@ export default function Reportes() {
     async function load() {
         if (!user) return;
         setLoading(true);
-        const [exp, mov, cats, ports, conts] = await Promise.all([
-            supabase.from('expenses').select('id, expense, categoria, valor, moneda, status, fecha, portafolio, contacto_id').eq('user_id', user.id),
-            supabase.from('movimientos').select('id, tipo, concepto, monto, moneda, categoria, fecha, expense_id, contacto_id').eq('user_id', user.id),
+        const [exp, mov, cats, ports, conts, cuent, ta] = await Promise.all([
+            supabase.from('expenses').select('*').eq('user_id', user.id),
+            supabase.from('movimientos').select('*').eq('user_id', user.id),
             supabase.from('user_categories').select('name').eq('user_id', user.id).order('name'),
             supabase.from('user_portfolios').select('name').eq('user_id', user.id).order('name'),
             supabase.from('contactos').select('*').eq('user_id', user.id).order('nombre'),
+            supabase.from('cuentas_saldos').select('*').order('created_at', { ascending: true }),
+            supabase.from('tasas_cambio').select('*').eq('par', 'USD_COP').order('fecha', { ascending: false }).limit(1).maybeSingle(),
         ]);
 
-        const movs = (mov.data as (Movimiento & { expense_id: string | null; contacto_id: string | null })[]) || [];
+        const movs = (mov.data as Movimiento[]) || [];
+        const exps = (exp.data as Expense[]) || [];
         const paidExpenseIds = new Set(movs.filter(m => m.expense_id).map(m => m.expense_id));
+
+        setExpById(Object.fromEntries(exps.map(e => [e.id, e])));
+        setMovById(Object.fromEntries(movs.map(m => [m.id, m])));
 
         const out: Row[] = [];
         // Movimientos (dinero real): gasto / ingreso, excluye traslados
@@ -75,16 +94,18 @@ export default function Reportes() {
                 fecha: m.fecha, mes: m.fecha.slice(0, 7), concepto: m.concepto || '(sin concepto)',
                 categoria: m.categoria || 'Sin categoría', monto: Number(m.monto) || 0, moneda: m.moneda,
                 tipo: m.tipo, fuente: 'cuenta', estado: 'Pagado', portafolio: null, contactoId: m.contacto_id || null,
+                sourceId: m.id,
             });
         }
         // Expenses del presupuesto que NO tienen movimiento asociado (evita doble conteo)
-        for (const e of (exp.data as Expense[]) || []) {
+        for (const e of exps) {
             if (paidExpenseIds.has(e.id)) continue;
             if (!e.fecha) continue;
             out.push({
                 fecha: e.fecha, mes: e.fecha.slice(0, 7), concepto: e.expense || '(sin concepto)',
                 categoria: e.categoria || 'Sin categoría', monto: Number(e.valor) || 0, moneda: e.moneda,
                 tipo: 'gasto', fuente: 'presupuesto', estado: e.status, portafolio: e.portafolio || null, contactoId: e.contacto_id || null,
+                sourceId: e.id,
             });
         }
 
@@ -92,6 +113,8 @@ export default function Reportes() {
         setCategorias((cats.data || []).map((c: UserCategory) => c.name));
         setPortafolios(((ports.data as UserPortfolio[]) || []).map(p => p.name));
         setContactos((conts.data as Contacto[]) || []);
+        setCuentas((cuent.data as CuentaSaldo[]) || []);
+        setRate(ta.data ? Number((ta.data as TasaCambio).valor) : null);
         setLoading(false);
     }
 
@@ -140,6 +163,16 @@ export default function Reportes() {
 
     const fmt = (n: number) => formatCurrency(n, moneda);
     const sel = "px-3 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-semibold text-zinc-700 dark:text-zinc-200 outline-none focus:ring-2 focus:ring-teal-500";
+
+    const openRow = (r: Row) => {
+        if (r.fuente === 'cuenta') {
+            const m = movById[r.sourceId];
+            if (m) { setMovToEdit(m); setMovModalOpen(true); }
+        } else {
+            const e = expById[r.sourceId];
+            if (e) { setExpToEdit(e); setExpModalOpen(true); }
+        }
+    };
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
@@ -294,11 +327,11 @@ export default function Reportes() {
                     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden">
                         <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                             <h3 className="font-bold text-zinc-900 dark:text-white">Detalle ({detalle.length})</h3>
-                            <span className="text-xs text-zinc-400 hidden sm:block">cada transacción del filtro</span>
+                            <span className="text-xs text-zinc-400 hidden sm:block">clic para editar</span>
                         </div>
                         <div className="max-h-[28rem] overflow-y-auto divide-y divide-zinc-50 dark:divide-zinc-800/60">
                             {detalle.map((r, i) => (
-                                <div key={i} className="flex items-center gap-3 px-5 py-2.5">
+                                <div key={i} onClick={() => openRow(r)} className="flex items-center gap-3 px-5 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer">
                                     <div className="flex-1 min-w-0">
                                         <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">{r.concepto}</p>
                                         <p className="text-[11px] text-zinc-400 truncate">
@@ -316,6 +349,22 @@ export default function Reportes() {
                     </div>
                 </>
             )}
+
+            <ExpenseModal
+                isOpen={expModalOpen}
+                onClose={() => { setExpModalOpen(false); setExpToEdit(null); }}
+                onSuccess={() => { setExpModalOpen(false); setExpToEdit(null); load(); }}
+                expenseToEdit={expToEdit}
+            />
+            <MovimientoModal
+                isOpen={movModalOpen}
+                onClose={() => { setMovModalOpen(false); setMovToEdit(null); }}
+                onSuccess={() => { setMovModalOpen(false); setMovToEdit(null); load(); }}
+                cuentas={cuentas}
+                categorias={categorias}
+                defaultRate={rate}
+                movToEdit={movToEdit}
+            />
         </div>
     );
 }
