@@ -10,6 +10,7 @@ const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Juli
 const fmtMonth = (iso: string) => { const d = new Date(iso + 'T12:00:00'); return `${monthNames[d.getMonth()]} ${d.getFullYear()}`; };
 
 type Consolidado = {
+    periodId: string | null;  // null = portafolio sin periodos
     portfolioId: string;
     name: string;
     mes: string | null;       // period_month ISO
@@ -17,6 +18,8 @@ type Consolidado = {
     estado: 'Pendiente' | 'Pagado';
     currency: Currency;
 };
+
+const rowKey = (r: Consolidado) => r.periodId || r.portfolioId;
 
 export default function PortfoliosList() {
     const { user } = useAuth();
@@ -73,19 +76,32 @@ export default function PortfoliosList() {
         const sharedList = all.filter(p => p.type === 'shared');
         if (sharedList.length === 0) { setConsolidado([]); return; }
 
-        // Último periodo (mes) de cada portafolio compartido
+        // Todos los periodos (mes) de cada portafolio compartido, más nuevo primero
         const { data: periods } = await supabase
             .from('portfolio_periods')
             .select('*')
             .eq('user_id', user.id)
             .order('period_month', { ascending: false });
 
-        const latestByPortfolio = new Map<string, PortfolioPeriod>();
+        // Agrupa periodos por portafolio y marca el último de cada uno
+        const periodsByPortfolio = new Map<string, PortfolioPeriod[]>();
         for (const p of (periods as PortfolioPeriod[]) || []) {
-            if (!latestByPortfolio.has(p.portfolio_id)) latestByPortfolio.set(p.portfolio_id, p);
+            const arr = periodsByPortfolio.get(p.portfolio_id) || [];
+            arr.push(p);
+            periodsByPortfolio.set(p.portfolio_id, arr);
         }
 
-        const periodIds = [...latestByPortfolio.values()].map(p => p.id);
+        // Un periodo se muestra si está Pendiente O si es el último del portafolio.
+        // Así los meses sin pagar nunca desaparecen aunque exista un mes más reciente.
+        const shownPeriods = new Map<string, PortfolioPeriod[]>();
+        for (const p of sharedList) {
+            const list = periodsByPortfolio.get(p.id) || [];
+            const latestId = list[0]?.id;
+            const shown = list.filter(per => (per.pago_socio_estado !== 'Pagado') || per.id === latestId);
+            shownPeriods.set(p.id, shown);
+        }
+
+        const periodIds = [...shownPeriods.values()].flat().map(p => p.id);
         let itemsByPeriod = new Map<string, PortfolioPeriodItem[]>();
         if (periodIds.length) {
             const { data: items } = await supabase
@@ -99,26 +115,37 @@ export default function PortfoliosList() {
             }
         }
 
-        const rows: Consolidado[] = sharedList.map(p => {
-            const per = latestByPortfolio.get(p.id) || null;
-            const items = per ? (itemsByPeriod.get(per.id) || []) : [];
+        const calcLeDebo = (per: PortfolioPeriod): number => {
+            const items = itemsByPeriod.get(per.id) || [];
             const sum = (t: string) => items.filter(i => i.tipo === t).reduce((a, c) => a + Number(c.monto), 0);
             const neto = sum('ingreso') - sum('gasto_compartido');
-            const pct = per?.partner_percent ?? 50;
-            const leDebo = neto * (pct / 100) + sum('cargo_socio') - sum('descuento_socio');
-            return {
-                portfolioId: p.id,
-                name: p.name,
-                mes: per?.period_month || null,
-                leDebo: per ? leDebo : 0,
-                estado: (per?.pago_socio_estado as 'Pendiente' | 'Pagado') || 'Pendiente',
-                currency: p.default_currency,
-            };
-        });
+            const pct = per.partner_percent ?? 50;
+            return neto * (pct / 100) + sum('cargo_socio') - sum('descuento_socio');
+        };
+
+        const rows: Consolidado[] = [];
+        for (const p of sharedList) {
+            const shown = shownPeriods.get(p.id) || [];
+            if (shown.length === 0) {
+                rows.push({ periodId: null, portfolioId: p.id, name: p.name, mes: null, leDebo: 0, estado: 'Pendiente', currency: p.default_currency });
+                continue;
+            }
+            for (const per of shown) {
+                rows.push({
+                    periodId: per.id,
+                    portfolioId: p.id,
+                    name: p.name,
+                    mes: per.period_month || null,
+                    leDebo: calcLeDebo(per),
+                    estado: (per.pago_socio_estado as 'Pendiente' | 'Pagado') || 'Pendiente',
+                    currency: p.default_currency,
+                });
+            }
+        }
 
         setConsolidado(rows);
-        // Por defecto marca los que tienen un saldo pendiente (>0 y sin pagar)
-        setChecked(new Set(rows.filter(r => r.mes && r.leDebo > 0 && r.estado !== 'Pagado').map(r => r.portfolioId)));
+        // Por defecto marca los periodos con saldo pendiente (>0 y sin pagar)
+        setChecked(new Set(rows.filter(r => r.mes && r.leDebo > 0 && r.estado !== 'Pagado').map(rowKey)));
     }
 
     const toggleCheck = (id: string) => setChecked(prev => {
@@ -130,7 +157,7 @@ export default function PortfoliosList() {
     const shared = portfolios.filter(p => p.type === 'shared');
     const simple = portfolios.filter(p => p.type === 'simple');
 
-    const seleccionados = consolidado.filter(r => checked.has(r.portfolioId));
+    const seleccionados = consolidado.filter(r => checked.has(rowKey(r)));
     const totalSeleccionado = seleccionados.reduce((a, r) => a + r.leDebo, 0);
     const monedasSel = new Set(seleccionados.map(r => r.currency));
     const monedaTotal: Currency = monedasSel.size === 1 ? (Array.from(monedasSel)[0] as Currency) : 'USD';
@@ -177,12 +204,13 @@ export default function PortfoliosList() {
                             </thead>
                             <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/60">
                                 {consolidado.map(r => {
-                                    const isChecked = checked.has(r.portfolioId);
+                                    const k = rowKey(r);
+                                    const isChecked = checked.has(k);
                                     const pagado = r.estado === 'Pagado';
                                     return (
                                         <tr
-                                            key={r.portfolioId}
-                                            onClick={() => toggleCheck(r.portfolioId)}
+                                            key={k}
+                                            onClick={() => toggleCheck(k)}
                                             className={`cursor-pointer transition-colors ${isChecked ? 'bg-teal-50/50 dark:bg-teal-900/10' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'}`}
                                         >
                                             <td className="py-3 pl-6">
